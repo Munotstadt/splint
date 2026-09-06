@@ -268,6 +268,7 @@
   <button data-view="securities">Securities</button>
   <button data-view="performance">Performance Overview</button>
   <button data-view="prices">Prices</button>
+  <button data-view="valuation">Valuation</button>
   <button data-view="data">Data Management</button>
 </nav>
 
@@ -602,6 +603,41 @@
             <th data-key="currency">Currency</th>
             <th data-key="dateDMY">Date</th>
             <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ VALUATION ============ -->
+  <section id="view-valuation" class="view">
+    <div class="section-title">
+      <h2>Valuation</h2>
+      <span class="hint">Security <span id="val-asset-id-label" class="mono"></span> · <span id="val-asset-name-label"></span> · manual valuation prices, stored as normal monthly price points</span>
+    </div>
+    <div class="card upload-card" style="margin-bottom:14px;">
+      <strong>Add a new valuation</strong>
+      <div class="desc">Last stored Valuation Price: <span class="mono" id="val-current-price">—</span>. Submitting writes a new (or updated) monthly price point for this security into Prices — same table used by the Prices tab.</div>
+      <div class="field-grid" style="grid-template-columns:1fr 1fr 1fr auto;">
+        <div><label>New Value</label><input type="number" step="0.01" id="val-input-value"></div>
+        <div><label>Date</label><input type="date" id="val-input-date"></div>
+        <div><label>Valuation Impact</label><input type="text" id="val-impact-preview" class="mono" readonly value="—"></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn primary" id="val-submit-btn">Submit</button></div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="valuation-table">
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th class="num">No Splints</th>
+            <th class="num">Current Value</th>
+            <th class="num">Invested</th>
+            <th class="num">Value Splint</th>
+            <th class="num">Costs Splint</th>
+            <th class="num">Valuation Price</th>
+            <th class="num">VP vs. V</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -2120,6 +2156,89 @@ function renderPrices(){
   addSel.value = ids.includes(prevVal) ? prevVal : '';
 }
 
+// ---------------------------------------------------------------- RENDER: VALUATION --
+// Dedicated single-security view (SecurityID 21000) for entering manual valuation prices.
+// A "valuation" here is just a normal monthly price point in splint_prices/DB.prices — this
+// view only adds a purpose-built input form (with a live valuation-impact preview) and a
+// history table that lines the stored price series up against the transaction-ledger-derived
+// position (No Splints / Invested) for that same security, month by month.
+const VALUATION_ASSET_ID = '21000';
+
+function updateValuationImpactPreview(){
+  const priceEl = document.getElementById('val-input-value');
+  const previewEl = document.getElementById('val-impact-preview');
+  const raw = priceEl.value;
+  if (raw === ''){ previewEl.value = '—'; return; }
+  const inputValue = parseFloat(raw);
+  if (isNaN(inputValue)){ previewEl.value = '—'; return; }
+  const lp = latestPrice(VALUATION_ASSET_ID);
+  const valuationPrice = lp ? lp.price : 0;
+  const noSplints = computeOpenPosition(VALUATION_ASSET_ID).qty;
+  const impact = (inputValue - valuationPrice) * noSplints;
+  const currency = lp ? lp.currency : 'EUR';
+  previewEl.value = fmtMoney(impact, currency);
+}
+
+async function submitValuation(){
+  const valueRaw = document.getElementById('val-input-value').value;
+  const dateRaw = document.getElementById('val-input-date').value;
+  const inputValue = parseFloat(valueRaw);
+  if (valueRaw === '' || isNaN(inputValue)){ log('Valuation not saved: enter a value.', true); return; }
+  if (!dateRaw){ log('Valuation not saved: enter a date.', true); return; }
+  const month = dateRaw.slice(0,7);
+  const dateDMY = isoToDMY(dateRaw);
+  const lp = latestPrice(VALUATION_ASSET_ID);
+  const currency = lp ? lp.currency : 'EUR';
+  ensureMaster(VALUATION_ASSET_ID);
+  const existing = DB.prices.find(p => p.assetId === VALUATION_ASSET_ID && p.month === month);
+  const entry = {assetId: VALUATION_ASSET_ID, month, dateDMY, price: inputValue, currency};
+  if (existing) Object.assign(existing, entry); else DB.prices.push(entry);
+  document.getElementById('val-input-value').value = '';
+  updateValuationImpactPreview();
+  await autoSyncToD1(`Valuation price added for ${VALUATION_ASSET_ID}`);
+  renderAll();
+  log(`Valuation saved: ${assetName(VALUATION_ASSET_ID)} · ${monthLabel(month)} · ${fmtMoney(inputValue, currency)}.`);
+}
+
+function renderValuation(){
+  document.getElementById('val-asset-id-label').textContent = VALUATION_ASSET_ID;
+  document.getElementById('val-asset-name-label').textContent = assetName(VALUATION_ASSET_ID);
+  const lp = latestPrice(VALUATION_ASSET_ID);
+  document.getElementById('val-current-price').textContent = lp ? fmtMoney(lp.price, lp.currency) + ' (' + monthLabel(lp.month) + ')' : '—';
+  updateValuationImpactPreview();
+
+  const months = assetPriceSeries(VALUATION_ASSET_ID).map(p => p.month).slice().sort().reverse();
+  const rows = months.map(month => {
+    const pos = computeOpenPosition(VALUATION_ASSET_ID, month);
+    const priceEntry = assetPriceSeries(VALUATION_ASSET_ID).find(p => p.month === month);
+    const valuationPrice = priceEntry ? priceEntry.price : null;
+    const currency = priceEntry ? priceEntry.currency : 'EUR';
+    const currentValue = valuationPrice !== null ? pos.qty * valuationPrice : 0;
+    const invested = pos.costBasis;
+    const valueSplint = pos.qty > 0.0001 ? currentValue / pos.qty : null;
+    const costsSplint = pos.qty > 0.0001 ? invested / pos.qty : null;
+    const vpVsV = (valuationPrice !== null && valueSplint) ? (valuationPrice / valueSplint - 1) * 100 : null;
+    return {month, noSplints: pos.qty, currentValue, invested, valueSplint, costsSplint, valuationPrice, currency, vpVsV};
+  });
+
+  document.querySelector('#valuation-table tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="mono">${monthLabel(r.month)}</td>
+      <td class="num">${fmtNum(r.noSplints)}</td>
+      <td class="num">${fmtMoney(r.currentValue, r.currency)}</td>
+      <td class="num">${fmtMoney(r.invested, r.currency)}</td>
+      <td class="num">${r.valueSplint !== null ? fmtMoney(r.valueSplint, r.currency) : '—'}</td>
+      <td class="num">${r.costsSplint !== null ? fmtMoney(r.costsSplint, r.currency) : '—'}</td>
+      <td class="num">${r.valuationPrice !== null ? fmtMoney(r.valuationPrice, r.currency) : '—'}</td>
+      <td class="num" style="color:${signColor(r.vpVsV)}">${r.vpVsV !== null ? fmtPct(r.vpVsV) : '—'}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="8" class="hint">No valuation prices yet for ${escapeHtml(VALUATION_ASSET_ID)}.</td></tr>`;
+}
+
+document.getElementById('val-input-value').addEventListener('input', updateValuationImpactPreview);
+document.getElementById('val-submit-btn').addEventListener('click', submitValuation);
+document.getElementById('val-input-date').value = todayISO();
+
 // ---------------------------------------------------------------- HEADER --
 function updateHeaderStatus(){
   const el = document.getElementById('header-status');
@@ -2263,6 +2382,7 @@ function renderAll(){
   renderSecurityDetail(document.getElementById('sec-select').value);
   renderPerformance();
   renderPrices();
+  renderValuation();
 }
 
 // ---------------------------------------------------------------- EVENTS --
