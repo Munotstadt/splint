@@ -744,6 +744,30 @@ function d1Delete(table, filters){
   return d1Api('/' + table + '?' + qs, { method: 'DELETE' });
 }
 
+// ------------------------------------------------------------ SECURITIES D1 (Valuation) --
+// Separate D1 database (binding SECDB, table security_prices) behind /api/sec/:table — used
+// only by the Valuation page. Insert-only from here: every valuation submission is a new row.
+async function secApi(path, options = {}){
+  const res = await fetch('/api/sec' + path, {
+    ...options,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
+  if (!res.ok){
+    let msg = res.status + ' ' + res.statusText;
+    try { const j = await res.json(); msg = j.error || msg; } catch(e){ /* ignore */ }
+    throw new Error(msg);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+function secSelectBySecurityId(table, securityId){
+  return secApi('/' + table + '?select=*&security_id=' + encodeURIComponent(securityId));
+}
+function secInsert(table, rows){
+  return secApi('/' + table, { method: 'POST', body: JSON.stringify(rows) });
+}
+
 // ---------------------------------------------------------------- IDENTITY --
 // Cloudflare Access has already authenticated + authorized the request by the time
 // this script runs (it blocks at the edge, redirecting to Google itself). We just
@@ -754,6 +778,7 @@ async function initAuth(){
     document.getElementById('user-badge').style.display = 'flex';
     document.getElementById('user-email').textContent = who.email;
     await loadFromD1();
+    await loadValuationPrices();
     renderAll();
   } catch(err){
     // Should not normally happen — Access would have blocked the request already.
@@ -2157,12 +2182,39 @@ function renderPrices(){
 }
 
 // ---------------------------------------------------------------- RENDER: VALUATION --
-// Dedicated single-security view (SecurityID 21000) for entering manual valuation prices.
-// A "valuation" here is just a normal monthly price point in splint_prices/DB.prices — this
-// view only adds a purpose-built input form (with a live valuation-impact preview) and a
-// history table that lines the stored price series up against the transaction-ledger-derived
-// position (No Splints / Invested) for that same security, month by month.
+// Dedicated single-security view (SecurityID 21000). Unlike every other price series in this
+// app, valuation prices for this security live in a *separate* D1 database (binding SECDB,
+// table security_prices — SecurityID / Price / Price_adjusted / Price_date / source), reached
+// via /api/sec/security_prices. "No Splints" / "Invested" still come from the normal
+// transaction ledger (splint_transactions, asset_id = VALUATION_ASSET_ID) in the main DB.
 const VALUATION_ASSET_ID = '21000';
+let SEC_PRICES = []; // raw rows from security_prices for this SecurityID, ascending by Price_date
+
+// security_prices has no one-row-per-month guarantee (unlike splint_prices), so this collapses
+// the raw rows down to the latest Price_date within each month — matching how the Valuation
+// table is meant to read ("nur der letzte pro Monat").
+function latestSecPricePerMonth(){
+  const byMonth = {};
+  SEC_PRICES.forEach(r => {
+    const month = (r.Price_date || '').slice(0,7);
+    if (!month) return;
+    const existing = byMonth[month];
+    if (!existing || r.Price_date >= existing.Price_date) byMonth[month] = r;
+  });
+  return byMonth;
+}
+function latestSecPrice(){
+  return SEC_PRICES.length ? SEC_PRICES[SEC_PRICES.length-1] : null; // ascending order from the API
+}
+
+async function loadValuationPrices(){
+  try{
+    SEC_PRICES = await secSelectBySecurityId('security_prices', VALUATION_ASSET_ID) || [];
+  } catch(err){
+    SEC_PRICES = [];
+    log('Loading valuation prices (Securities DB) failed: ' + err.message, true);
+  }
+}
 
 function updateValuationImpactPreview(){
   const priceEl = document.getElementById('val-input-value');
@@ -2171,12 +2223,11 @@ function updateValuationImpactPreview(){
   if (raw === ''){ previewEl.value = '—'; return; }
   const inputValue = parseFloat(raw);
   if (isNaN(inputValue)){ previewEl.value = '—'; return; }
-  const lp = latestPrice(VALUATION_ASSET_ID);
-  const valuationPrice = lp ? lp.price : 0;
+  const lp = latestSecPrice();
+  const valuationPrice = lp ? (lp.Price_adjusted !== null && lp.Price_adjusted !== undefined ? lp.Price_adjusted : lp.Price) : 0;
   const noSplints = computeOpenPosition(VALUATION_ASSET_ID).qty;
   const impact = (inputValue - valuationPrice) * noSplints;
-  const currency = lp ? lp.currency : 'EUR';
-  previewEl.value = fmtMoney(impact, currency);
+  previewEl.value = fmtMoney(impact, 'EUR');
 }
 
 async function submitValuation(){
@@ -2185,51 +2236,55 @@ async function submitValuation(){
   const inputValue = parseFloat(valueRaw);
   if (valueRaw === '' || isNaN(inputValue)){ log('Valuation not saved: enter a value.', true); return; }
   if (!dateRaw){ log('Valuation not saved: enter a date.', true); return; }
-  const month = dateRaw.slice(0,7);
-  const dateDMY = isoToDMY(dateRaw);
-  const lp = latestPrice(VALUATION_ASSET_ID);
-  const currency = lp ? lp.currency : 'EUR';
-  ensureMaster(VALUATION_ASSET_ID);
-  const existing = DB.prices.find(p => p.assetId === VALUATION_ASSET_ID && p.month === month);
-  const entry = {assetId: VALUATION_ASSET_ID, month, dateDMY, price: inputValue, currency};
-  if (existing) Object.assign(existing, entry); else DB.prices.push(entry);
-  document.getElementById('val-input-value').value = '';
-  updateValuationImpactPreview();
-  await autoSyncToD1(`Valuation price added for ${VALUATION_ASSET_ID}`);
-  renderAll();
-  log(`Valuation saved: ${assetName(VALUATION_ASSET_ID)} · ${monthLabel(month)} · ${fmtMoney(inputValue, currency)}.`);
+  try{
+    await secInsert('security_prices', [{
+      SecurityID: VALUATION_ASSET_ID,
+      Price: inputValue,
+      Price_adjusted: inputValue,
+      Price_date: dateRaw,
+      source: 'Splint: valuation worker',
+    }]);
+    document.getElementById('val-input-value').value = '';
+    await loadValuationPrices();
+    updateValuationImpactPreview();
+    renderValuation();
+    log(`Valuation saved: Security ${VALUATION_ASSET_ID} · ${dateRaw} · ${fmtMoney(inputValue,'EUR')}.`);
+  } catch(err){
+    log('Saving valuation failed: ' + err.message, true);
+  }
 }
 
 function renderValuation(){
   document.getElementById('val-asset-id-label').textContent = VALUATION_ASSET_ID;
   document.getElementById('val-asset-name-label').textContent = assetName(VALUATION_ASSET_ID);
-  const lp = latestPrice(VALUATION_ASSET_ID);
-  document.getElementById('val-current-price').textContent = lp ? fmtMoney(lp.price, lp.currency) + ' (' + monthLabel(lp.month) + ')' : '—';
+  const lp = latestSecPrice();
+  const lpPrice = lp ? (lp.Price_adjusted !== null && lp.Price_adjusted !== undefined ? lp.Price_adjusted : lp.Price) : null;
+  document.getElementById('val-current-price').textContent = lp ? fmtMoney(lpPrice, 'EUR') + ' (' + (lp.Price_date||'').slice(0,7) + ')' : '—';
   updateValuationImpactPreview();
 
-  const months = assetPriceSeries(VALUATION_ASSET_ID).map(p => p.month).slice().sort().reverse();
+  const byMonth = latestSecPricePerMonth();
+  const months = Object.keys(byMonth).sort().reverse();
   const rows = months.map(month => {
     const pos = computeOpenPosition(VALUATION_ASSET_ID, month);
-    const priceEntry = assetPriceSeries(VALUATION_ASSET_ID).find(p => p.month === month);
-    const valuationPrice = priceEntry ? priceEntry.price : null;
-    const currency = priceEntry ? priceEntry.currency : 'EUR';
+    const rec = byMonth[month];
+    const valuationPrice = rec ? (rec.Price_adjusted !== null && rec.Price_adjusted !== undefined ? rec.Price_adjusted : rec.Price) : null;
     const currentValue = valuationPrice !== null ? pos.qty * valuationPrice : 0;
     const invested = pos.costBasis;
     const valueSplint = pos.qty > 0.0001 ? currentValue / pos.qty : null;
     const costsSplint = pos.qty > 0.0001 ? invested / pos.qty : null;
     const vpVsV = (valuationPrice !== null && valueSplint) ? (valuationPrice / valueSplint - 1) * 100 : null;
-    return {month, noSplints: pos.qty, currentValue, invested, valueSplint, costsSplint, valuationPrice, currency, vpVsV};
+    return {month, noSplints: pos.qty, currentValue, invested, valueSplint, costsSplint, valuationPrice, vpVsV};
   });
 
   document.querySelector('#valuation-table tbody').innerHTML = rows.map(r => `
     <tr>
       <td class="mono">${monthLabel(r.month)}</td>
       <td class="num">${fmtNum(r.noSplints)}</td>
-      <td class="num">${fmtMoney(r.currentValue, r.currency)}</td>
-      <td class="num">${fmtMoney(r.invested, r.currency)}</td>
-      <td class="num">${r.valueSplint !== null ? fmtMoney(r.valueSplint, r.currency) : '—'}</td>
-      <td class="num">${r.costsSplint !== null ? fmtMoney(r.costsSplint, r.currency) : '—'}</td>
-      <td class="num">${r.valuationPrice !== null ? fmtMoney(r.valuationPrice, r.currency) : '—'}</td>
+      <td class="num">${fmtMoney(r.currentValue, 'EUR')}</td>
+      <td class="num">${fmtMoney(r.invested, 'EUR')}</td>
+      <td class="num">${r.valueSplint !== null ? fmtMoney(r.valueSplint, 'EUR') : '—'}</td>
+      <td class="num">${r.costsSplint !== null ? fmtMoney(r.costsSplint, 'EUR') : '—'}</td>
+      <td class="num">${r.valuationPrice !== null ? fmtMoney(r.valuationPrice, 'EUR') : '—'}</td>
       <td class="num" style="color:${signColor(r.vpVsV)}">${r.vpVsV !== null ? fmtPct(r.vpVsV) : '—'}</td>
     </tr>
   `).join('') || `<tr><td colspan="8" class="hint">No valuation prices yet for ${escapeHtml(VALUATION_ASSET_ID)}.</td></tr>`;
@@ -2903,6 +2958,7 @@ async function autoSyncToD1(reason){
 
 document.getElementById('d1-refresh').addEventListener('click', async () => {
   await loadFromD1();
+  await loadValuationPrices();
   renderAll();
 });
 document.getElementById('d1-export').addEventListener('click', () => {

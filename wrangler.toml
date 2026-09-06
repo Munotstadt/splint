@@ -11,5 +11,14 @@ binding = "DB"
 database_name = "splint"
 database_id = "b780146a-d314-4e72-9f51-a9b7f58c6351"
 
+# Separate Securities D1 database (security_master / security_prices) used by the
+# Valuation page. NOTE: database_name below is a best guess — if `wrangler deploy`
+# complains that the name doesn't match this database_id, fix the name to whatever
+# `wrangler d1 list` shows for id 07edce2c-f7e2-48a5-a219-e48005579333.
+[[d1_databases]]
+binding = "SECDB"
+database_name = "securities"
+database_id = "07edce2c-f7e2-48a5-a219-e48005579333"
+
 [vars]
 ALLOWED_EMAIL = "ph.gnaedinger@gmail.com"
