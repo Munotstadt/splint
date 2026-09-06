@@ -614,7 +614,6 @@
   <section id="view-valuation" class="view">
     <div class="section-title">
       <h2>Valuation</h2>
-      <span class="hint">Security <span id="val-asset-id-label" class="mono"></span> · <span id="val-asset-name-label"></span> · manual valuation prices, stored as normal monthly price points</span>
     </div>
     <div class="card upload-card" style="margin-bottom:14px;">
       <strong>Add a new valuation</strong>
@@ -641,8 +640,7 @@
             <th class="num">Value Splint</th>
             <th class="num">Cost Splint</th>
             <th class="num">Price</th>
-            <th class="num">Return</th>
-            <th class="num">Return %</th>
+            <th class="num">P vs. VS</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -2267,8 +2265,6 @@ async function submitValuation(){
 }
 
 function renderValuation(){
-  document.getElementById('val-asset-id-label').textContent = VALUATION_ASSET_ID;
-  document.getElementById('val-asset-name-label').textContent = assetName(VALUATION_ASSET_ID);
   const lp = latestSecPrice();
   const lpPrice = lp ? (lp.Price_adjusted !== null && lp.Price_adjusted !== undefined ? lp.Price_adjusted : lp.Price) : null;
   document.getElementById('val-current-price').textContent = lp ? fmtMoney(lpPrice, 'EUR') + ' (' + (lp.Price_date||'').slice(0,7) + ')' : '—';
@@ -2277,12 +2273,11 @@ function renderValuation(){
   const monthly = computePortfolioValueCostByMonth().slice().reverse(); // descending, newest first
   const secByMonth = latestSecPricePerMonth(); // SecurityID 21000 valuation prices, latest per month — unrelated to the Splint ledger above
   document.querySelector('#valuation-table tbody').innerHTML = monthly.map(r => {
-    const ret = r.value - r.cost;
-    const retPct = r.cost > 0 ? (ret / r.cost * 100) : null;
     const valueSplint = r.splints > 0.0001 ? r.value / r.splints : null;
     const costSplint = r.splints > 0.0001 ? r.cost / r.splints : null;
     const secRec = secByMonth[r.month];
     const price = secRec ? (secRec.Price_adjusted !== null && secRec.Price_adjusted !== undefined ? secRec.Price_adjusted : secRec.Price) : null;
+    const pVsVs = (price !== null && valueSplint) ? (price / valueSplint - 1) * 100 : null;
     return `
     <tr>
       <td class="mono">${monthLabel(r.month)}</td>
@@ -2292,10 +2287,9 @@ function renderValuation(){
       <td class="num">${valueSplint !== null ? fmtMoney(valueSplint, 'EUR', 2) : '—'}</td>
       <td class="num">${costSplint !== null ? fmtMoney(costSplint, 'EUR', 2) : '—'}</td>
       <td class="num">${price !== null ? fmtMoney(price, 'EUR', 2) : '—'}</td>
-      <td class="num" style="color:${signColor(ret)}">${fmtMoney(ret)}</td>
-      <td class="num" style="color:${signColor(retPct)}">${retPct===null?'—':fmtPct(retPct)}</td>
+      <td class="num" style="color:${signColor(pVsVs)}">${pVsVs !== null ? fmtPct(pVsVs) : '—'}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="9" class="hint">No portfolio history yet.</td></tr>`;
+  }).join('') || `<tr><td colspan="8" class="hint">No portfolio history yet.</td></tr>`;
 }
 
 document.getElementById('val-input-value').addEventListener('input', updateValuationImpactPreview);
