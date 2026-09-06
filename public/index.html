@@ -626,18 +626,23 @@
         <div style="display:flex;align-items:flex-end;"><button class="btn primary" id="val-submit-btn">Submit</button></div>
       </div>
     </div>
+    <div class="section-title" style="margin-top:18px;">
+      <h2>Portfolio Value &amp; Cost by Month</h2>
+      <span class="hint">Same figures as the Dashboard's "Portfolio Value Over Time" chart, as a table.</span>
+    </div>
     <div class="table-wrap">
       <table id="valuation-table">
         <thead>
           <tr>
             <th>Month</th>
-            <th class="num">No Splints</th>
-            <th class="num">Current Value</th>
-            <th class="num">Invested</th>
+            <th class="num">No. Splints</th>
+            <th class="num">Value</th>
+            <th class="num">Cost</th>
             <th class="num">Value Splint</th>
-            <th class="num">Costs Splint</th>
-            <th class="num">Valuation Price</th>
-            <th class="num">VP vs. V</th>
+            <th class="num">Cost Splint</th>
+            <th class="num">Price</th>
+            <th class="num">Return</th>
+            <th class="num">Return %</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -1671,6 +1676,31 @@ function svgMultiLineChart(series, opts={}){
 }
 
 // ---------------------------------------------------------------- RENDER: DASHBOARD --
+// Portfolio value & cost history: for each month, use the quantity actually held AT THAT
+// MONTH-END (ledger-derived, historical) × the latest known price up to that month — not
+// today's quantity. If no price point exists yet for that month (e.g. an asset was just
+// bought and hasn't had its first valuation upload), fall back to its average cost per splint
+// instead of 0 — otherwise a freshly-bought asset would create a fake dip in the Value line
+// before its first price arrives. Cost = cost basis outstanding at that same month-end.
+// Shared by the Dashboard chart and the Valuation table.
+function computePortfolioValueCostByMonth(){
+  const months = allMonthsSorted();
+  const allIds = allAssetIds();
+  return months.map(m => {
+    let val = 0, cost = 0, splints = 0;
+    allIds.forEach(id => {
+      const pos = computeOpenPosition(id, m);
+      if (pos.qty <= 0.0001) return;
+      const series = assetPriceSeries(id).filter(p => p.month <= m);
+      const pricePerSplint = series.length ? series[series.length-1].price : (pos.costBasis / pos.qty);
+      val += pricePerSplint * pos.qty;
+      cost += pos.costBasis;
+      splints += pos.qty;
+    });
+    return {month: m, value: val, cost, splints};
+  });
+}
+
 function renderDashboard(){
   const hasData = DB.transactions.length || Object.keys(DB.holdings).length;
   document.getElementById('dashboard-empty').style.display = hasData ? 'none' : '';
@@ -1715,35 +1745,17 @@ function renderDashboard(){
     </div>
   `;
 
-  // Portfolio value history: for each month, use the quantity actually held AT THAT MONTH-END
-  // (ledger-derived, historical) × the latest known price up to that month — not today's quantity.
-  // If no price point exists yet for that month (e.g. an asset was just bought and hasn't had its
-  // first valuation upload), fall back to its average cost per splint instead of 0 — otherwise a
-  // freshly-bought asset would create a fake dip in the Value line before its first price arrives.
-  // Second line: cost basis outstanding at that same month-end.
-  const months = allMonthsSorted();
-  const allIds = allAssetIds();
-  const heldIds = allIds.filter(isCurrentlyHeld); // today's holdings, used below for Top Positions
-  const valuePoints = [], costPoints = [];
-  months.forEach(m => {
-    let val = 0, cost = 0;
-    allIds.forEach(id => {
-      const pos = computeOpenPosition(id, m);
-      if (pos.qty <= 0.0001) return;
-      const series = assetPriceSeries(id).filter(p => p.month <= m);
-      const pricePerSplint = series.length ? series[series.length-1].price : (pos.costBasis / pos.qty);
-      val += pricePerSplint * pos.qty;
-      cost += pos.costBasis;
-    });
-    valuePoints.push({label: monthLabel(m), value: val});
-    costPoints.push({label: monthLabel(m), value: cost});
-  });
+  const monthlySeries = computePortfolioValueCostByMonth();
+  const valuePoints = monthlySeries.map(r => ({label: monthLabel(r.month), value: r.value}));
+  const costPoints = monthlySeries.map(r => ({label: monthLabel(r.month), value: r.cost}));
   document.getElementById('portfolio-chart-card').innerHTML = svgMultiLineChart([
     {name: 'Value', color: '#E30613', points: valuePoints},
     {name: 'Cost', color: '#94a3b8', points: costPoints},
   ]);
 
   // by category
+  const allIds = allAssetIds();
+  const heldIds = allIds.filter(isCurrentlyHeld); // today's holdings, used below for Top Positions
   const catMap = {};
   allIds.forEach(id => {
     const pos = computeOpenPosition(id);
@@ -2262,32 +2274,28 @@ function renderValuation(){
   document.getElementById('val-current-price').textContent = lp ? fmtMoney(lpPrice, 'EUR') + ' (' + (lp.Price_date||'').slice(0,7) + ')' : '—';
   updateValuationImpactPreview();
 
-  const byMonth = latestSecPricePerMonth();
-  const months = Object.keys(byMonth).sort().reverse();
-  const rows = months.map(month => {
-    const pos = computeOpenPosition(VALUATION_ASSET_ID, month);
-    const rec = byMonth[month];
-    const valuationPrice = rec ? (rec.Price_adjusted !== null && rec.Price_adjusted !== undefined ? rec.Price_adjusted : rec.Price) : null;
-    const currentValue = valuationPrice !== null ? pos.qty * valuationPrice : 0;
-    const invested = pos.costBasis;
-    const valueSplint = pos.qty > 0.0001 ? currentValue / pos.qty : null;
-    const costsSplint = pos.qty > 0.0001 ? invested / pos.qty : null;
-    const vpVsV = (valuationPrice !== null && valueSplint) ? (valuationPrice / valueSplint - 1) * 100 : null;
-    return {month, noSplints: pos.qty, currentValue, invested, valueSplint, costsSplint, valuationPrice, vpVsV};
-  });
-
-  document.querySelector('#valuation-table tbody').innerHTML = rows.map(r => `
+  const monthly = computePortfolioValueCostByMonth().slice().reverse(); // descending, newest first
+  const secByMonth = latestSecPricePerMonth(); // SecurityID 21000 valuation prices, latest per month — unrelated to the Splint ledger above
+  document.querySelector('#valuation-table tbody').innerHTML = monthly.map(r => {
+    const ret = r.value - r.cost;
+    const retPct = r.cost > 0 ? (ret / r.cost * 100) : null;
+    const valueSplint = r.splints > 0.0001 ? r.value / r.splints : null;
+    const costSplint = r.splints > 0.0001 ? r.cost / r.splints : null;
+    const secRec = secByMonth[r.month];
+    const price = secRec ? (secRec.Price_adjusted !== null && secRec.Price_adjusted !== undefined ? secRec.Price_adjusted : secRec.Price) : null;
+    return `
     <tr>
       <td class="mono">${monthLabel(r.month)}</td>
-      <td class="num">${fmtNum(r.noSplints)}</td>
-      <td class="num">${fmtMoney(r.currentValue, 'EUR')}</td>
-      <td class="num">${fmtMoney(r.invested, 'EUR')}</td>
-      <td class="num">${r.valueSplint !== null ? fmtMoney(r.valueSplint, 'EUR') : '—'}</td>
-      <td class="num">${r.costsSplint !== null ? fmtMoney(r.costsSplint, 'EUR') : '—'}</td>
-      <td class="num">${r.valuationPrice !== null ? fmtMoney(r.valuationPrice, 'EUR') : '—'}</td>
-      <td class="num" style="color:${signColor(r.vpVsV)}">${r.vpVsV !== null ? fmtPct(r.vpVsV) : '—'}</td>
-    </tr>
-  `).join('') || `<tr><td colspan="8" class="hint">No valuation prices yet for ${escapeHtml(VALUATION_ASSET_ID)}.</td></tr>`;
+      <td class="num">${fmtNum(r.splints,0)}</td>
+      <td class="num">${fmtMoney(r.value)}</td>
+      <td class="num">${fmtMoney(r.cost)}</td>
+      <td class="num">${valueSplint !== null ? fmtMoney(valueSplint, 'EUR', 2) : '—'}</td>
+      <td class="num">${costSplint !== null ? fmtMoney(costSplint, 'EUR', 2) : '—'}</td>
+      <td class="num">${price !== null ? fmtMoney(price, 'EUR', 2) : '—'}</td>
+      <td class="num" style="color:${signColor(ret)}">${fmtMoney(ret)}</td>
+      <td class="num" style="color:${signColor(retPct)}">${retPct===null?'—':fmtPct(retPct)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="9" class="hint">No portfolio history yet.</td></tr>`;
 }
 
 document.getElementById('val-input-value').addEventListener('input', updateValuationImpactPreview);
