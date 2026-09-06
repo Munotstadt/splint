@@ -268,6 +268,7 @@
   <button data-view="securities">Securities</button>
   <button data-view="performance">Performance Overview</button>
   <button data-view="prices">Prices</button>
+  <button data-view="valuation">Valuation</button>
   <button data-view="data">Data Management</button>
 </nav>
 
@@ -609,6 +610,41 @@
     </div>
   </section>
 
+  <!-- ============ VALUATION ============ -->
+  <section id="view-valuation" class="view">
+    <div class="section-title">
+      <h2>Valuation</h2>
+      <span class="hint">Security <span id="val-asset-id-label" class="mono"></span> · <span id="val-asset-name-label"></span> · manual valuation prices, stored as normal monthly price points</span>
+    </div>
+    <div class="card upload-card" style="margin-bottom:14px;">
+      <strong>Add a new valuation</strong>
+      <div class="desc">Last stored Valuation Price: <span class="mono" id="val-current-price">—</span>. Submitting writes a new (or updated) monthly price point for this security into Prices — same table used by the Prices tab.</div>
+      <div class="field-grid" style="grid-template-columns:1fr 1fr 1fr auto;">
+        <div><label>New Value</label><input type="number" step="0.01" id="val-input-value"></div>
+        <div><label>Date</label><input type="date" id="val-input-date"></div>
+        <div><label>Valuation Impact</label><input type="text" id="val-impact-preview" class="mono" readonly value="—"></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn primary" id="val-submit-btn">Submit</button></div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="valuation-table">
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th class="num">No Splints</th>
+            <th class="num">Current Value</th>
+            <th class="num">Invested</th>
+            <th class="num">Value Splint</th>
+            <th class="num">Costs Splint</th>
+            <th class="num">Valuation Price</th>
+            <th class="num">VP vs. V</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
   <!-- ============ DATA MANAGEMENT ============ -->
   <section id="view-data" class="view">
     <div class="section-title">
@@ -623,9 +659,9 @@
         manually anymore, and no token to manage in this browser.
       </div>
       <div class="upload-row" style="margin-top:6px;">
-        <button class="btn ghost" id="neon-refresh">Reload from D1</button>
-        <button class="btn ghost" id="neon-export">Export current data as CSV</button>
-        <span class="hint mono" id="neon-status"></span>
+        <button class="btn ghost" id="d1-refresh">Reload from D1</button>
+        <button class="btn ghost" id="d1-export">Export current data as CSV</button>
+        <span class="hint mono" id="d1-status"></span>
       </div>
     </div>
 
@@ -675,9 +711,9 @@
    ========================================================================= */
 
 // ---------------------------------------------------------------- D1 API CALLS --
-// Same call shape as the old Neon Data API layer (neonSelect/neonUpsert/neonDelete),
+// Same call shape as the old Neon Data API layer (d1Select/d1Upsert/d1Delete),
 // so every call site elsewhere in this file is unchanged — only the transport moved
-// from the Neon Data API to this site's own /api/:table Pages Functions backed by D1.
+// from the Neon Data API (historically) to this site's own /api/:table Worker endpoints backed by D1.
 async function d1Api(path, options = {}){
   const res = await fetch('/api' + path, {
     ...options,
@@ -693,16 +729,16 @@ async function d1Api(path, options = {}){
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
-function neonSelect(table, columns = '*'){
+function d1Select(table, columns = '*'){
   return d1Api('/' + table + '?select=' + encodeURIComponent(columns));
 }
-function neonUpsert(table, rows, onConflict){
+function d1Upsert(table, rows, onConflict){
   return d1Api('/' + table + '?on_conflict=' + encodeURIComponent(onConflict), {
     method: 'POST',
     body: JSON.stringify(rows),
   });
 }
-function neonDelete(table, filters){
+function d1Delete(table, filters){
   // filters: {column: value, ...} -> exact-match .eq() filters, ANDed together
   const qs = Object.entries(filters).map(([k,v]) => `${encodeURIComponent(k)}=eq.${encodeURIComponent(v)}`).join('&');
   return d1Api('/' + table + '?' + qs, { method: 'DELETE' });
@@ -717,7 +753,7 @@ async function initAuth(){
     const who = await d1Api('/whoami');
     document.getElementById('user-badge').style.display = 'flex';
     document.getElementById('user-email').textContent = who.email;
-    await loadFromNeon();
+    await loadFromD1();
     renderAll();
   } catch(err){
     // Should not normally happen — Access would have blocked the request already.
@@ -2120,6 +2156,89 @@ function renderPrices(){
   addSel.value = ids.includes(prevVal) ? prevVal : '';
 }
 
+// ---------------------------------------------------------------- RENDER: VALUATION --
+// Dedicated single-security view (SecurityID 21000) for entering manual valuation prices.
+// A "valuation" here is just a normal monthly price point in splint_prices/DB.prices — this
+// view only adds a purpose-built input form (with a live valuation-impact preview) and a
+// history table that lines the stored price series up against the transaction-ledger-derived
+// position (No Splints / Invested) for that same security, month by month.
+const VALUATION_ASSET_ID = '21000';
+
+function updateValuationImpactPreview(){
+  const priceEl = document.getElementById('val-input-value');
+  const previewEl = document.getElementById('val-impact-preview');
+  const raw = priceEl.value;
+  if (raw === ''){ previewEl.value = '—'; return; }
+  const inputValue = parseFloat(raw);
+  if (isNaN(inputValue)){ previewEl.value = '—'; return; }
+  const lp = latestPrice(VALUATION_ASSET_ID);
+  const valuationPrice = lp ? lp.price : 0;
+  const noSplints = computeOpenPosition(VALUATION_ASSET_ID).qty;
+  const impact = (inputValue - valuationPrice) * noSplints;
+  const currency = lp ? lp.currency : 'EUR';
+  previewEl.value = fmtMoney(impact, currency);
+}
+
+async function submitValuation(){
+  const valueRaw = document.getElementById('val-input-value').value;
+  const dateRaw = document.getElementById('val-input-date').value;
+  const inputValue = parseFloat(valueRaw);
+  if (valueRaw === '' || isNaN(inputValue)){ log('Valuation not saved: enter a value.', true); return; }
+  if (!dateRaw){ log('Valuation not saved: enter a date.', true); return; }
+  const month = dateRaw.slice(0,7);
+  const dateDMY = isoToDMY(dateRaw);
+  const lp = latestPrice(VALUATION_ASSET_ID);
+  const currency = lp ? lp.currency : 'EUR';
+  ensureMaster(VALUATION_ASSET_ID);
+  const existing = DB.prices.find(p => p.assetId === VALUATION_ASSET_ID && p.month === month);
+  const entry = {assetId: VALUATION_ASSET_ID, month, dateDMY, price: inputValue, currency};
+  if (existing) Object.assign(existing, entry); else DB.prices.push(entry);
+  document.getElementById('val-input-value').value = '';
+  updateValuationImpactPreview();
+  await autoSyncToD1(`Valuation price added for ${VALUATION_ASSET_ID}`);
+  renderAll();
+  log(`Valuation saved: ${assetName(VALUATION_ASSET_ID)} · ${monthLabel(month)} · ${fmtMoney(inputValue, currency)}.`);
+}
+
+function renderValuation(){
+  document.getElementById('val-asset-id-label').textContent = VALUATION_ASSET_ID;
+  document.getElementById('val-asset-name-label').textContent = assetName(VALUATION_ASSET_ID);
+  const lp = latestPrice(VALUATION_ASSET_ID);
+  document.getElementById('val-current-price').textContent = lp ? fmtMoney(lp.price, lp.currency) + ' (' + monthLabel(lp.month) + ')' : '—';
+  updateValuationImpactPreview();
+
+  const months = assetPriceSeries(VALUATION_ASSET_ID).map(p => p.month).slice().sort().reverse();
+  const rows = months.map(month => {
+    const pos = computeOpenPosition(VALUATION_ASSET_ID, month);
+    const priceEntry = assetPriceSeries(VALUATION_ASSET_ID).find(p => p.month === month);
+    const valuationPrice = priceEntry ? priceEntry.price : null;
+    const currency = priceEntry ? priceEntry.currency : 'EUR';
+    const currentValue = valuationPrice !== null ? pos.qty * valuationPrice : 0;
+    const invested = pos.costBasis;
+    const valueSplint = pos.qty > 0.0001 ? currentValue / pos.qty : null;
+    const costsSplint = pos.qty > 0.0001 ? invested / pos.qty : null;
+    const vpVsV = (valuationPrice !== null && valueSplint) ? (valuationPrice / valueSplint - 1) * 100 : null;
+    return {month, noSplints: pos.qty, currentValue, invested, valueSplint, costsSplint, valuationPrice, currency, vpVsV};
+  });
+
+  document.querySelector('#valuation-table tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="mono">${monthLabel(r.month)}</td>
+      <td class="num">${fmtNum(r.noSplints)}</td>
+      <td class="num">${fmtMoney(r.currentValue, r.currency)}</td>
+      <td class="num">${fmtMoney(r.invested, r.currency)}</td>
+      <td class="num">${r.valueSplint !== null ? fmtMoney(r.valueSplint, r.currency) : '—'}</td>
+      <td class="num">${r.costsSplint !== null ? fmtMoney(r.costsSplint, r.currency) : '—'}</td>
+      <td class="num">${r.valuationPrice !== null ? fmtMoney(r.valuationPrice, r.currency) : '—'}</td>
+      <td class="num" style="color:${signColor(r.vpVsV)}">${r.vpVsV !== null ? fmtPct(r.vpVsV) : '—'}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="8" class="hint">No valuation prices yet for ${escapeHtml(VALUATION_ASSET_ID)}.</td></tr>`;
+}
+
+document.getElementById('val-input-value').addEventListener('input', updateValuationImpactPreview);
+document.getElementById('val-submit-btn').addEventListener('click', submitValuation);
+document.getElementById('val-input-date').value = todayISO();
+
 // ---------------------------------------------------------------- HEADER --
 function updateHeaderStatus(){
   const el = document.getElementById('header-status');
@@ -2254,7 +2373,7 @@ function renderPortfolio(){
 // ---------------------------------------------------------------- MASTER RENDER --
 function renderAll(){
   normalizePrices();
-  if (backfillFxRates()) autoSyncToNeon('FX rates auto-filled from accountingdatacollector');
+  if (backfillFxRates()) autoSyncToD1('FX rates auto-filled from accountingdatacollector');
   updateHeaderStatus();
   renderDashboard();
   renderPortfolio();
@@ -2263,6 +2382,7 @@ function renderAll(){
   renderSecurityDetail(document.getElementById('sec-select').value);
   renderPerformance();
   renderPrices();
+  renderValuation();
 }
 
 // ---------------------------------------------------------------- EVENTS --
@@ -2284,7 +2404,7 @@ async function handleDay1ProfitInputChange(e){
   if (!tx) return;
   const raw = input.value.trim();
   tx.day1Profit = raw === '' ? '' : parseFloat(raw);
-  await autoSyncToNeon('Day1Profit edited');
+  await autoSyncToD1('Day1Profit edited');
 }
 document.querySelector('#tx-table tbody').addEventListener('change', handleDay1ProfitInputChange);
 document.querySelector('#sec-tx-table tbody').addEventListener('change', handleDay1ProfitInputChange);
@@ -2300,7 +2420,7 @@ async function handleFxRateInputChange(e){
   document.querySelectorAll(`[data-value-chf-for="${tx.id}"]`).forEach(cell => {
     cell.textContent = valueChf === null ? '' : fmtMoney(valueChf, 'CHF');
   });
-  await autoSyncToNeon('FX Rate edited');
+  await autoSyncToD1('FX Rate edited');
 }
 document.querySelector('#tx-table tbody').addEventListener('change', handleFxRateInputChange);
 document.querySelector('#sec-tx-table tbody').addEventListener('change', handleFxRateInputChange);
@@ -2433,7 +2553,7 @@ document.querySelector('#portfolio-table tbody').addEventListener('change', asyn
     diffCell.textContent = diff===null ? 'n/a' : fmtPct(diff,1);
     diffCell.style.color = diff===null ? 'var(--ink-soft)' : signColor(diff);
   }
-  await autoSyncToNeon('eROI edited');
+  await autoSyncToD1('eROI edited');
 });
 document.querySelectorAll('#portfolio-table thead th[data-key]').forEach(th => {
   th.addEventListener('click', () => {
@@ -2499,7 +2619,7 @@ document.getElementById('sec-save-btn').addEventListener('click', async () => {
   renderPortfolio();
   renderTransactions();
   renderPerformance();
-  await autoSyncToNeon('Master data updated');
+  await autoSyncToD1('Master data updated');
 });
 document.getElementById('sec-eroi').addEventListener('change', async (e) => {
   const id = document.getElementById('sec-select').value;
@@ -2512,7 +2632,7 @@ document.getElementById('sec-eroi').addEventListener('change', async (e) => {
   const eroiDiffEl = document.getElementById('sec-eroi-diff');
   eroiDiffEl.textContent = eroiDiff === null ? 'n/a' : fmtPct(eroiDiff,1);
   eroiDiffEl.style.color = eroiDiff === null ? 'var(--ink-soft)' : signColor(eroiDiff);
-  await autoSyncToNeon('eROI edited');
+  await autoSyncToD1('eROI edited');
 });
 
 document.getElementById('perf-search').addEventListener('input', renderPerformance);
@@ -2548,14 +2668,14 @@ document.querySelector('#prices-table tbody').addEventListener('change', async (
   const val = parseFloat(input.value);
   if (isNaN(val)) return;
   p.price = val;
-  await autoSyncToNeon('Price edited');
+  await autoSyncToD1('Price edited');
   renderAll();
 });
 document.querySelector('#prices-table tbody').addEventListener('click', async (e) => {
   const btn = e.target.closest('.price-delete-btn');
   if (!btn) return;
   DB.prices = DB.prices.filter(x => !(x.assetId === btn.dataset.assetId && x.month === btn.dataset.month));
-  await autoSyncToNeon('Price deleted');
+  await autoSyncToD1('Price deleted');
   renderAll();
 });
 document.getElementById('price-add-btn').addEventListener('click', async () => {
@@ -2566,7 +2686,7 @@ document.getElementById('price-add-btn').addEventListener('click', async () => {
   if (!assetId || !month || isNaN(price)){ log('Please choose an asset, a month and a valid price.', true); return; }
   upsertPrice(assetId, month, price, currency);
   document.getElementById('price-add-value').value = '';
-  await autoSyncToNeon('Price added/updated');
+  await autoSyncToD1('Price added/updated');
   renderAll();
 });
 
@@ -2597,7 +2717,7 @@ document.getElementById('upload-opp-btn').addEventListener('click', async () => 
     const asOf = document.getElementById('opp-date').value || todayISO();
     importOpportunitiesCSV(await readFile(input), asOf);
     renderAll();
-    await autoSyncToNeon('Investment Opportunities import');
+    await autoSyncToD1('Investment Opportunities import');
     document.getElementById('load-opp-filename').textContent = '';
     input.value = '';
   } catch(err){ log('Error loading the Opportunities export: '+err.message, true); btn.disabled = false; }
@@ -2618,7 +2738,7 @@ document.getElementById('upload-act-btn').addEventListener('click', async () => 
   try{
     importTransactionsCSV(await readFile(input), 'Activities-Export');
     renderAll();
-    await autoSyncToNeon('Activities import');
+    await autoSyncToD1('Activities import');
     document.getElementById('load-act-filename').textContent = '';
     input.value = '';
   } catch(err){ log('Error loading the Activities export: '+err.message, true); btn.disabled = false; }
@@ -2649,9 +2769,9 @@ function buildMasterCSV(){
   return toCSV(['AssetID','Asset Name','Asset Category','Asset SubCategory','Asset Category_old','Notes','Release Date','Min Horizon','Max Horizon','eROI'], rows);
 }
 
-// ---------------------------------------------------------------- NEON DATA API --
-function neonStatus(msg, isErr){
-  const el = document.getElementById('neon-status');
+// ---------------------------------------------------------------- D1 API --
+function d1Status(msg, isErr){
+  const el = document.getElementById('d1-status');
   if (!el) return;
   el.textContent = msg;
   el.style.color = isErr ? 'var(--red)' : 'var(--ink-soft)';
@@ -2663,7 +2783,7 @@ function nowStamp(){
   }).format(new Date());
 }
 
-// Maps a Neon splint_masterdata row (snake_case) into the DB.master shape (camelCase) used
+// Maps a D1 splint_masterdata row (snake_case) into the DB.master shape (camelCase) used
 // throughout the app.
 function masterRowToDB(r){
   return {
@@ -2695,13 +2815,13 @@ function txRowToDB(r){
   };
 }
 
-async function loadFromNeon(){
-  neonStatus('Loading from Neon …');
+async function loadFromD1(){
+  d1Status('Loading from D1 …');
   try{
     const [masterData, pricesData, txData] = await Promise.all([
-      neonSelect('splint_masterdata'),
-      neonSelect('splint_prices'),
-      neonSelect('splint_transactions'),
+      d1Select('splint_masterdata'),
+      d1Select('splint_prices'),
+      d1Select('splint_transactions'),
     ]);
 
     DB.master = {};
@@ -2709,16 +2829,16 @@ async function loadFromNeon(){
     DB.prices = (pricesData || []).map(priceRowToDB);
     DB.transactions = (txData || []).map(txRowToDB);
 
-    neonStatus('Up to date ✓ (' + nowStamp() + ')');
-    log(`Loaded from Neon: ${Object.keys(DB.master).length} assets, ${DB.prices.length} price points, ${DB.transactions.length} transactions.`);
+    d1Status('Up to date ✓ (' + nowStamp() + ')');
+    log(`Loaded from D1: ${Object.keys(DB.master).length} assets, ${DB.prices.length} price points, ${DB.transactions.length} transactions.`);
   } catch(err){
-    neonStatus('Error: ' + err.message, true);
-    log('Loading from Neon failed: ' + err.message, true);
+    d1Status('Error: ' + err.message, true);
+    log('Loading from D1 failed: ' + err.message, true);
   }
 }
 
 // Upserts the current in-memory master-data dict into splint_masterdata.
-async function syncMasterToNeon(){
+async function syncMasterToD1(){
   const rows = Object.values(DB.master).map(m => ({
     asset_id: m.assetId, asset_name: m.assetName, asset_category: m.category || null,
     asset_subcategory: m.subCategory || null, asset_category_old: m.categoryOld || null,
@@ -2728,31 +2848,31 @@ async function syncMasterToNeon(){
     eroi: m.eROI === '' ? null : m.eROI,
   }));
   if (!rows.length) return;
-  await neonUpsert('splint_masterdata', rows, 'asset_id');
+  await d1Upsert('splint_masterdata', rows, 'asset_id');
 }
 
-// Upserts current in-memory prices, then deletes any Neon row (by asset_id+month) that no
+// Upserts current in-memory prices, then deletes any D1 row (by asset_id+month) that no
 // longer exists locally — mirrors the old "full CSV overwrite" semantics for deletions.
-async function syncPricesToNeon(){
+async function syncPricesToD1(){
   const rows = DB.prices.map(p => ({
     asset_id: p.assetId, asset_name: assetName(p.assetId), month: p.month,
     price_date: p.dateDMY ? dmyToISO(p.dateDMY) : null,
     price: p.price, currency: p.currency || 'EUR',
   }));
   if (rows.length){
-    await neonUpsert('splint_prices', rows, 'asset_id,month');
+    await d1Upsert('splint_prices', rows, 'asset_id,month');
   }
-  const remote = await neonSelect('splint_prices', 'asset_id,month');
+  const remote = await d1Select('splint_prices', 'asset_id,month');
   const localKeys = new Set(DB.prices.map(p => p.assetId + '|' + p.month));
   const toDelete = (remote || []).filter(r => !localKeys.has(r.asset_id + '|' + r.month));
   for (const r of toDelete){
-    await neonDelete('splint_prices', { asset_id: r.asset_id, month: r.month });
+    await d1Delete('splint_prices', { asset_id: r.asset_id, month: r.month });
   }
 }
 
 // Transactions are only ever appended/edited by transaction_id, never bulk-deleted locally, so a
 // plain upsert (no reconciliation delete) matches the app's existing dedup-by-ID behavior.
-async function syncTransactionsToNeon(){
+async function syncTransactionsToD1(){
   const rows = DB.transactions.map(t => ({
     transaction_id: parseInt(t.id, 10), transaction_type: t.type, asset_id: t.assetId,
     transaction_date: t.dateISO || null,
@@ -2764,28 +2884,28 @@ async function syncTransactionsToNeon(){
     fx_rate: t.fxRate === '' ? null : t.fxRate,
   }));
   if (!rows.length) return;
-  await neonUpsert('splint_transactions', rows, 'transaction_id');
+  await d1Upsert('splint_transactions', rows, 'transaction_id');
 }
 
-async function autoSyncToNeon(reason){
-  neonStatus('Saving to Neon …');
+async function autoSyncToD1(reason){
+  d1Status('Saving to D1 …');
   try{
-    await syncMasterToNeon();
-    await syncPricesToNeon();
-    await syncTransactionsToNeon();
-    neonStatus('Saved ✓ (' + nowStamp() + ')');
-    log(`Synced to Neon (${reason}).`);
+    await syncMasterToD1();
+    await syncPricesToD1();
+    await syncTransactionsToD1();
+    d1Status('Saved ✓ (' + nowStamp() + ')');
+    log(`Synced to D1 (${reason}).`);
   } catch(err){
-    neonStatus('Error: ' + err.message, true);
-    log('Neon sync failed: ' + err.message, true);
+    d1Status('Error: ' + err.message, true);
+    log('D1 sync failed: ' + err.message, true);
   }
 }
 
-document.getElementById('neon-refresh').addEventListener('click', async () => {
-  await loadFromNeon();
+document.getElementById('d1-refresh').addEventListener('click', async () => {
+  await loadFromD1();
   renderAll();
 });
-document.getElementById('neon-export').addEventListener('click', () => {
+document.getElementById('d1-export').addEventListener('click', () => {
   downloadText('stammdaten.csv', buildMasterCSV());
   downloadText('prices.csv', buildPricesCSV());
   downloadText('transactions.csv', buildTransactionsCSV());
@@ -2797,5 +2917,6 @@ document.getElementById('opp-date').value = todayISO();
 loadFxRates();
 
 </script>
+  <script src="https://munotstadt.github.io/db_admin/assets/improvements-button.js" data-app="splint"></script>
 </body>
 </html>
