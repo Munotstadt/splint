@@ -1,0 +1,15 @@
+name = "splint"
+main = "src/worker.js"
+compatibility_date = "2024-09-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "splint"
+database_id = "b780146a-d314-4e72-9f51-a9b7f58c6351"
+
+[vars]
+ALLOWED_EMAIL = "ph.gnaedinger@gmail.com"

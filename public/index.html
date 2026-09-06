@@ -1,0 +1,2801 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Splint Tracker — Munotstadt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --red:#E30613;
+    --red-dim:#f4c9cc;
+    --ink:#14181c;
+    --ink-soft:#4b5560;
+    --paper:#ffffff;
+    --paper-alt:#ffffff;
+    --hover:#f7f7f8;
+    --line:#dde1e4;
+    --line-soft:#eceef0;
+    --green:#0d7a3f;
+    --green-bg:#e7f4ec;
+    --red-bg:#fdeceb;
+    --radius:4px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:#ffffff;
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    font-size:14px;
+    line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{font-family:'Space Grotesk',sans-serif;margin:0;font-weight:600;letter-spacing:-0.01em;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  a{color:inherit;}
+
+  /* ---------- Top bar (styled to match the Munotstadt suite's shared minimal layout) ---------- */
+  header.topbar{
+    background:#fff;
+    color:var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:18px 20px 14px;
+    position:sticky; top:0; z-index:50;
+    border-bottom:2px solid var(--red);
+  }
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand h1{font-size:20px; letter-spacing:0.02em; color:var(--ink); text-transform:uppercase; font-weight:700;}
+  .brand .sub{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-soft); letter-spacing:0.08em; text-transform:uppercase; margin-top:2px;}
+
+  nav.tabs{
+    display:flex; gap:4px; overflow-x:auto; flex-wrap:wrap;
+    background:#fff;
+    padding:10px 20px;
+    border-bottom:1px solid var(--line);
+  }
+  nav.tabs button{
+    background:none; color:var(--ink-soft);
+    font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:500;
+    padding:6px 10px; cursor:pointer; white-space:nowrap;
+    border:1px solid transparent; border-radius:3px;
+    transition:color .15s, border-color .15s, background .15s;
+  }
+  nav.tabs button:hover{color:var(--ink); border-color:var(--line);}
+  nav.tabs button.active{color:var(--ink); font-weight:600; border-color:var(--red); background:rgba(227,6,19,0.06);}
+
+  main{max-width:1240px; margin:0 auto; padding:22px 20px 60px;}
+  .view{display:none;}
+  .view.active{display:block;}
+  /* Portfolio needs the widest table in the app (13+ columns) — let it use the full viewport
+     width instead of the standard centered max-width, via the full-bleed technique. */
+  #view-portfolio.active{
+    max-width:none; width:100vw;
+    margin-left:calc(50% - 50vw); margin-right:calc(50% - 50vw);
+    padding-left:20px; padding-right:20px;
+  }
+
+  /* ---------- Cards / grid ---------- */
+  .grid{display:grid; gap:14px;}
+  .grid.cols-4{grid-template-columns:repeat(4,1fr);}
+  .grid.cols-3{grid-template-columns:repeat(3,1fr);}
+  .grid.cols-2{grid-template-columns:repeat(2,1fr);}
+  @media(max-width:900px){.grid.cols-4{grid-template-columns:repeat(2,1fr);} .grid.cols-3{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:600px){.grid.cols-4,.grid.cols-3,.grid.cols-2{grid-template-columns:1fr;}}
+
+  .card{
+    background:transparent;
+    border:none;
+    border-radius:0;
+    padding:0;
+  }
+  .card.kpi{border-bottom:1px solid var(--line); padding-bottom:14px;}
+  .card.kpi .label{font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-soft); margin-bottom:8px; font-family:'IBM Plex Mono',monospace;}
+  .card.kpi .value{font-family:'Space Grotesk',sans-serif; font-size:26px; font-weight:600;}
+  .card.kpi .delta{font-family:'IBM Plex Mono',monospace; font-size:12px; margin-top:6px;}
+  .delta.pos{color:var(--green);}
+  .delta.neg{color:var(--red);}
+
+  .section-title{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin:28px 0 12px;
+  }
+  .section-title h2{font-size:18px;}
+  .section-title .hint{font-size:12px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace;}
+  .section-title:first-child{margin-top:0;}
+
+  /* ---------- Tables ---------- */
+  table{width:100%; border-collapse:collapse; background:var(--paper); font-size:13px;}
+  thead th{
+    text-align:left; font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+    text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft);
+    padding:9px 10px; border-bottom:2px solid var(--ink);
+    cursor:pointer; user-select:none; white-space:nowrap;
+    position:sticky; top:0; background:var(--paper);
+  }
+  thead th:hover{color:var(--ink);}
+  thead th .arrow{color:var(--red); margin-left:3px;}
+  tbody td{padding:8px 10px; border-bottom:1px solid var(--line-soft); vertical-align:middle;}
+  tbody tr:hover{background:var(--hover);}
+  .num{font-family:'IBM Plex Mono',monospace; text-align:right; white-space:nowrap;}
+  .tag{
+    display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:10px;
+    padding:2px 7px; border-radius:20px; text-transform:uppercase; letter-spacing:.04em;
+  }
+  .tag.buy{background:var(--green-bg); color:var(--green);}
+  .tag.sell{background:var(--red-bg); color:var(--red);}
+  .asset-link{color:var(--ink); text-decoration:none; border-bottom:1px solid var(--line); cursor:pointer;}
+  .asset-link:hover{color:var(--red); border-bottom-color:var(--red);}
+  .table-wrap{border:1px solid var(--line); border-radius:var(--radius); overflow:auto; max-height:640px;}
+  tfoot td{
+    padding:9px 10px; font-family:'IBM Plex Mono',monospace; font-weight:600;
+    border-top:2px solid var(--ink); position:sticky; bottom:0; background:#fff;
+  }
+
+  /* ---------- Controls ---------- */
+  .toolbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px;}
+  input[type=text], input[type=search], input[type=date], select{
+    font-family:'Inter',sans-serif; font-size:13px;
+    border:1px solid var(--line); border-radius:var(--radius);
+    padding:7px 10px; background:#fff; color:var(--ink);
+  }
+  input[type=text]:focus, select:focus, input[type=date]:focus{outline:2px solid var(--red); outline-offset:-1px;}
+  button.btn{
+    font-family:'Space Grotesk',sans-serif; font-weight:500; font-size:13px;
+    background:var(--ink); color:#fff; border:none; border-radius:var(--radius);
+    padding:8px 14px; cursor:pointer;
+  }
+  button.btn:hover{background:#000;}
+  button.btn.primary{background:var(--red);}
+  button.btn.primary:hover{background:#c00510;}
+  button.btn.ghost{background:none; color:var(--ink); border:1px solid var(--line);}
+  button.btn.ghost:hover{border-color:var(--ink);}
+  button.btn:disabled{opacity:.4; cursor:not-allowed;}
+
+  .search-box{position:relative; flex:1; min-width:180px;}
+  .search-box input{width:100%;}
+
+  /* ---------- Data mgmt ---------- */
+  .upload-card{display:flex; flex-direction:column; gap:8px;}
+  .upload-card .desc{font-size:12.5px; color:var(--ink-soft);}
+  .upload-row{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+  input[type=file]{font-size:12.5px; max-width:100%;}
+  .log-box{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; background:var(--ink); color:#d7f7e2;
+    border-radius:var(--radius); padding:12px 14px; max-height:220px; overflow:auto; white-space:pre-wrap;
+  }
+  .log-box .err{color:#ffb4b0;}
+  .step-num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:20px;height:20px; background:var(--red); color:#fff; font-family:'IBM Plex Mono',monospace;
+    font-size:11px; border-radius:50%; margin-right:8px; flex-shrink:0;
+  }
+
+  /* ---------- Security detail ---------- */
+  .sec-header{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;}
+  .sec-header h2{font-size:20px; max-width:640px;}
+  .sec-meta{font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft); margin-top:4px;}
+  .field-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; margin-top:10px;}
+  .field-grid label{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; margin-bottom:4px;}
+  .field-grid input, .field-grid select{width:100%;}
+  @media(max-width:640px){.field-grid{grid-template-columns:1fr;}}
+
+  .chart-tooltip-label{font-family:'IBM Plex Mono',monospace; font-size:10px; fill:var(--ink-soft);}
+
+  .empty-state{
+    text-align:center; padding:50px 20px; color:var(--ink-soft);
+    border:1px dashed var(--line); border-radius:var(--radius); background:var(--paper);
+  }
+  .empty-state .step-num{margin-bottom:0;}
+
+  select#sec-select{min-width:260px;}
+
+  .pill-nav{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;}
+  .pill-nav button{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; padding:5px 11px;
+    border-radius:20px; border:1px solid var(--line); background:#fff; cursor:pointer;
+  }
+  .pill-nav button.active{background:var(--ink); color:#fff; border-color:var(--ink);}
+
+  footer.foot{
+    text-align:center; padding:24px; color:var(--ink-soft); font-size:11.5px; font-family:'IBM Plex Mono',monospace;
+  }
+  ::-webkit-scrollbar{height:8px; width:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px;}
+
+  /* ---------- Auth gate ---------- */
+  #auth-gate{
+    position:fixed; inset:0; z-index:1000; background:#fff;
+    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:18px;
+  }
+  #auth-gate .gate-card{
+    text-align:center; max-width:360px; padding:32px 28px;
+    border:1px solid var(--line); border-radius:8px;
+  }
+  #auth-gate h1{font-size:20px; text-transform:uppercase; letter-spacing:0.02em; margin-bottom:4px;}
+  #auth-gate .sub{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-soft); letter-spacing:0.06em; text-transform:uppercase; margin-bottom:22px;}
+  #auth-gate .gate-msg{font-size:13px; color:var(--ink-soft); margin:14px 0;}
+  #auth-gate .gate-msg.err{color:var(--red);}
+  #google-signin-btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:10px;
+    font-family:'Inter',sans-serif; font-weight:500; font-size:14px;
+    background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:var(--radius);
+    padding:10px 18px; cursor:pointer; width:100%;
+  }
+  #google-signin-btn:hover{border-color:var(--ink);}
+  #google-signin-btn svg{width:18px; height:18px; flex-shrink:0;}
+  #auth-gate[hidden]{display:none;}
+  .user-badge{display:flex; align-items:center; gap:10px;}
+  .user-badge img{width:22px; height:22px; border-radius:50%;}
+  #signout-btn{background:none; border:1px solid var(--line); color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:4px 10px; border-radius:var(--radius); cursor:pointer;}
+  #signout-btn:hover{border-color:var(--ink); color:var(--ink);}
+
+  .buchung-btn{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:26px; height:26px; padding:0; border:1px solid var(--line); border-radius:4px;
+    background:#fff; cursor:pointer;
+  }
+  .buchung-btn:hover{border-color:#1D6F42; background:#f2faf6;}
+  .buchung-btn svg{width:16px; height:16px;}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div>
+      <h1>Splint Tracker</h1>
+      <div class="sub">Munotstadt · Investment Monitoring</div>
+    </div>
+  </div>
+  <div style="display:flex; align-items:center; gap:16px;">
+    <div class="sub mono" id="header-status" style="text-align:right;">No data loaded</div>
+    <div class="user-badge" id="user-badge" style="display:none;">
+      <span class="mono" id="user-email" style="font-size:11px; color:var(--ink-soft);"></span>
+      <a id="signout-btn" href="/cdn-cgi/access/logout">Sign out</a>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button data-view="dashboard" class="active">Dashboard</button>
+  <button data-view="portfolio">Portfolio</button>
+  <button data-view="transactions">Transactions</button>
+  <button data-view="securities">Securities</button>
+  <button data-view="performance">Performance Overview</button>
+  <button data-view="prices">Prices</button>
+  <button data-view="data">Data Management</button>
+</nav>
+
+<main>
+
+  <!-- ============ DASHBOARD ============ -->
+  <section id="view-dashboard" class="view active">
+    <div id="dashboard-empty" class="empty-state">
+      <div class="step-num">i</div>
+      <p><strong>No data loaded yet.</strong><br>Open the "Data Management" tab and load your saved CSV files (if any) plus the latest Splint exports.</p>
+    </div>
+    <div id="dashboard-content" style="display:none;">
+      <div class="grid cols-4" id="kpi-grid"></div>
+
+      <div class="section-title">
+        <h2>Portfolio Value Over Time</h2>
+        <span class="hint">Quantity at month-end × price at month-end; second line: cost basis at month-end</span>
+      </div>
+      <div class="card" id="portfolio-chart-card" style="padding:18px 18px 10px;"></div>
+
+      <div class="section-title">
+        <h2>By Category</h2>
+        <span class="hint">Currently held positions, grouped by category</span>
+      </div>
+      <div class="table-wrap">
+        <table id="category-table">
+          <thead><tr><th>Category</th><th class="num">Splints</th><th class="num">Value</th><th class="num">Cost</th><th class="num">Return</th><th class="num">IRR p.a.</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="section-title">
+        <h2>Top Positions by Value</h2>
+        <span class="hint">Currently held</span>
+      </div>
+      <div class="table-wrap">
+        <table id="top-positions-table">
+          <thead><tr><th>Asset</th><th>Category</th><th class="num">Splints</th><th class="num">Value</th><th class="num">Performance</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="section-title">
+        <h2>Recent Transactions</h2>
+        <span class="hint">Last 10 · newest first</span>
+      </div>
+      <div class="table-wrap">
+        <table id="recent-tx-table">
+          <thead><tr><th>Date</th><th>Type</th><th>Asset</th><th class="num">Amount</th><th class="num">Price/Splint</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="section-title">
+        <h2>Cash Flow and Performance</h2>
+        <span class="hint">Monthly investments, exits/sales, net cash flow, unrealized and realized return · newest first</span>
+      </div>
+      <div class="table-wrap">
+        <table id="cashflow-table">
+          <thead><tr><th>Month</th><th class="num">Investments</th><th class="num">Exits/Sales</th><th class="num">Net Cash Flow</th><th class="num">Unrealized Return</th><th class="num">Realized Return</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PORTFOLIO ============ -->
+  <section id="view-portfolio" class="view">
+    <div class="section-title">
+      <h2>Portfolio</h2>
+      <span class="hint" id="portfolio-count-hint">All assets, incl. fully sold</span>
+    </div>
+    <div class="toolbar">
+      <div class="search-box"><input type="text" id="portfolio-search" placeholder="Search: asset, category, subcategory …"></div>
+      <div class="pill-nav" id="portfolio-filter-nav">
+        <button data-filter="all" class="active">All</button>
+        <button data-filter="held">Held</button>
+        <button data-filter="sold">Sold</button>
+      </div>
+      <select id="portfolio-category-filter"><option value="">All categories</option></select>
+    </div>
+    <div class="table-wrap">
+      <table id="portfolio-table">
+        <thead>
+          <tr>
+            <th data-key="name">Security</th>
+            <th data-key="splints" class="num">Splints</th>
+            <th data-key="value" class="num">Value</th>
+            <th data-key="cost" class="num">Cost</th>
+            <th data-key="returnAbs" class="num">Return abs.</th>
+            <th data-key="returnRel" class="num">Return rel.</th>
+            <th data-key="irr" class="num">IRR p.a.</th>
+            <th data-key="eroi" class="num">eROI</th>
+            <th data-key="eroiVsIrr" class="num">eROI vs IRR</th>
+            <th data-key="firstBuy">1st Buy</th>
+            <th data-key="exitDate">Exit/Sale</th>
+            <th data-key="holdingPeriod" class="num">Holding Period</th>
+            <th data-key="targetExitYear" class="num">Horizon</th>
+            <th data-key="category">Category</th>
+            <th data-key="subCategory">Subcategory</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot><tr id="portfolio-total-row"></tr></tfoot>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ TRANSACTIONS ============ -->
+  <section id="view-transactions" class="view">
+    <div class="section-title">
+      <h2>Transactions</h2>
+      <span class="hint" id="tx-count-hint"></span>
+    </div>
+    <div class="toolbar">
+      <div class="search-box">
+        <input type="text" id="tx-search" placeholder="Search: asset, type, ID, receipt …">
+      </div>
+      <select id="tx-type-filter">
+        <option value="">All types</option>
+        <option value="Primary market purchase">Primary market purchase</option>
+        <option value="Marketplace purchase">Marketplace purchase</option>
+        <option value="Marketplace sale">Marketplace sale</option>
+        <option value="Exit sale">Exit sale</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table id="tx-table">
+        <thead>
+          <tr>
+            <th data-key="dateISO">Date</th>
+            <th data-key="type">Type</th>
+            <th data-key="assetName">Asset</th>
+            <th data-key="splints" class="num">Splints</th>
+            <th data-key="amount" class="num">Amount</th>
+            <th data-key="pricePerSplint" class="num">Price/Splint</th>
+            <th data-key="day1Profit" class="num">Day1Profit</th>
+            <th data-key="fees" class="num">Fees</th>
+            <th data-key="priceChf" class="num">Price CHF</th>
+            <th data-key="valueChf" class="num">Value CHF</th>
+            <th data-key="id">Trans. ID</th>
+            <th>Receipt</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ SECURITIES ============ -->
+  <section id="view-securities" class="view">
+    <div class="section-title">
+      <h2>Securities</h2>
+    </div>
+    <div class="toolbar">
+      <div class="search-box">
+        <input type="text" id="sec-search" placeholder="Search asset …">
+      </div>
+      <select id="sec-select"><option value="">— choose asset —</option></select>
+    </div>
+
+    <div id="sec-empty" class="empty-state">
+      <p>Choose an asset above to see its price history, transactions, and master data.</p>
+    </div>
+
+    <div id="sec-detail" style="display:none;">
+      <div class="card">
+        <div class="sec-header">
+          <div>
+            <h2 id="sec-name">—</h2>
+            <div class="sec-meta" id="sec-meta">—</div>
+          </div>
+        </div>
+
+        <div class="grid cols-4" style="margin-top:14px;">
+          <div class="card kpi" style="padding:10px 12px;">
+            <div class="label">Splints</div>
+            <div class="value" id="sec-owned" style="font-size:18px;">—</div>
+          </div>
+          <div class="card kpi" style="padding:10px 12px;">
+            <div class="label">Value</div>
+            <div class="value" id="sec-value" style="font-size:18px;">—</div>
+          </div>
+          <div class="card kpi" style="padding:10px 12px;">
+            <div class="label">Cost</div>
+            <div class="value" id="sec-cost" style="font-size:18px;">—</div>
+          </div>
+          <div class="card kpi" style="padding:10px 12px;">
+            <div class="label">Return absolute</div>
+            <div class="value" id="sec-return-abs" style="font-size:18px;">—</div>
+          </div>
+          <div class="card kpi" style="padding:10px 12px;">
+            <div class="label">Return relative</div>
+            <div class="value" id="sec-return-rel" style="font-size:18px;">—</div>
+          </div>
+          <div class="card kpi" style="padding:10px 12px;">
+            <div class="label">IRR p.a. (time-weighted)</div>
+            <div class="value" id="sec-irr" style="font-size:18px;">—</div>
+          </div>
+          <div class="card kpi" style="padding:10px 12px;">
+            <div class="label">eROI</div>
+            <div class="value" style="font-size:18px;"><input type="number" step="0.1" id="sec-eroi" placeholder="—" style="width:80px;font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:600;border:none;border-bottom:1px solid var(--line);padding:0 0 2px;color:var(--ink);"> %</div>
+          </div>
+          <div class="card kpi" style="padding:10px 12px;">
+            <div class="label">eROI vs. IRR</div>
+            <div class="value" id="sec-eroi-diff" style="font-size:18px;">—</div>
+          </div>
+          <div class="card kpi" style="padding:10px 12px;">
+            <div class="label">Holding Period</div>
+            <div class="value" id="sec-holding-period" style="font-size:18px;">—</div>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:8px; font-size:11.5px;">Return = all buys/sells of this asset; for an open position the current value is also included as a hypothetical sale as of today. IRR is the annualized return of this cash flow series (Newton's method), so it accounts for the exact timing of every transaction. eROI vs. IRR = IRR − eROI.</div>
+
+        <div class="field-grid" style="margin-top:18px; border-top:1px solid var(--line-soft); padding-top:14px;">
+          <div style="grid-column:1/-1;">
+            <label>Asset name (master data — overrides the name from the Splint export; required if none exists yet)</label>
+            <input type="text" id="sec-name-input" placeholder="Set a name …">
+          </div>
+          <div>
+            <label>Asset category</label>
+            <input type="text" id="sec-category" list="category-list" placeholder="e.g. Trading Cards, Art, Watches …">
+            <datalist id="category-list"></datalist>
+          </div>
+          <div>
+            <label>Asset subcategory</label>
+            <input type="text" id="sec-subcategory" list="subcategory-list" placeholder="e.g. Football, Paintings, Sneakers …">
+            <datalist id="subcategory-list"></datalist>
+          </div>
+          <div>
+            <label>Asset Category_old</label>
+            <input type="text" id="sec-category-old" list="category-old-list" placeholder="former category mapping …">
+            <datalist id="category-old-list"></datalist>
+          </div>
+          <div style="grid-column:1/-1;">
+            <label>Notes (master data, not from Splint exports)</label>
+            <input type="text" id="sec-notes" placeholder="Free text …">
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <button class="btn primary" id="sec-save-btn">Save master data</button>
+          <span class="hint mono" id="sec-save-status" style="margin-left:10px;"></span>
+        </div>
+      </div>
+
+      <div class="section-title"><h2>Price History</h2><span class="hint">Monthly prices from prices.csv</span></div>
+      <div class="card" id="sec-chart-card" style="padding:18px 18px 10px;"></div>
+
+      <div class="section-title"><h2>Zeitablauf</h2><span class="hint">Release, buy(s), sale(s), today, and the expected exit window</span></div>
+      <div class="card" id="sec-timeline-card" style="padding:18px 18px 10px;"></div>
+
+      <div class="section-title"><h2>Transactions for this Asset</h2></div>
+      <div class="table-wrap">
+        <table id="sec-tx-table">
+          <thead><tr><th>Date</th><th>Type</th><th class="num">Splints</th><th class="num">Amount</th><th class="num">Price/Splint</th><th class="num">Day1Profit</th><th class="num">Fees</th><th class="num">Price CHF</th><th class="num">Value CHF</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="section-title"><h2>Similar Investments</h2><span class="hint" id="sec-similar-hint">Same category &amp; subcategory</span></div>
+      <div class="table-wrap">
+        <table id="sec-similar-table">
+          <thead>
+            <tr>
+              <th>Security</th>
+              <th class="num">Splints</th>
+              <th class="num">Value</th>
+              <th class="num">Cost</th>
+              <th class="num">Return abs.</th>
+              <th class="num">Return rel.</th>
+              <th class="num">IRR p.a.</th>
+              <th>1st Buy</th>
+              <th>Exit/Sale</th>
+              <th class="num">Horizon until</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PERFORMANCE OVERVIEW ============ -->
+  <section id="view-performance" class="view">
+    <div class="section-title">
+      <h2>Performance Overview</h2>
+      <span class="hint">Latest recorded price per month and asset</span>
+    </div>
+    <div class="toolbar">
+      <div class="search-box"><input type="text" id="perf-search" placeholder="Search asset …"></div>
+      <div class="pill-nav" id="perf-mode-nav">
+        <button data-mode="price" class="active">Prices</button>
+        <button data-mode="change">Δ % vs previous month</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="perf-table">
+        <thead><tr></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ PRICES ============ -->
+  <section id="view-prices" class="view">
+    <div class="section-title">
+      <h2>Prices</h2>
+      <span class="hint">All price points across all assets · exactly one price per asset &amp; month</span>
+    </div>
+    <div class="toolbar">
+      <div class="search-box"><input type="text" id="prices-search" placeholder="Search asset …"></div>
+    </div>
+    <div class="card upload-card" style="margin-bottom:14px;">
+      <strong>Add / update a price</strong>
+      <div class="desc">Adding a price for an asset &amp; month that already has one updates it in place — it never creates a second entry for the same month.</div>
+      <div class="field-grid" style="grid-template-columns:2fr 1fr 1fr 1fr auto;">
+        <div><label>Asset</label><select id="price-add-asset"><option value="">— choose asset —</option></select></div>
+        <div><label>Month</label><input type="month" id="price-add-month"></div>
+        <div><label>Price</label><input type="number" step="0.01" id="price-add-value"></div>
+        <div><label>Currency</label><input type="text" id="price-add-currency" value="EUR"></div>
+        <div style="display:flex;align-items:flex-end;"><button class="btn primary" id="price-add-btn">Save</button></div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="prices-table">
+        <thead>
+          <tr>
+            <th data-key="assetName">Asset</th>
+            <th data-key="month">Month</th>
+            <th data-key="price" class="num">Price</th>
+            <th data-key="currency">Currency</th>
+            <th data-key="dateDMY">Date</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ DATA MANAGEMENT ============ -->
+  <section id="view-data" class="view">
+    <div class="section-title">
+      <h2>1 · D1 Connection</h2>
+      <span class="hint">splint_masterdata / splint_prices / splint_transactions live in Cloudflare D1</span>
+    </div>
+    <div class="card upload-card">
+      <div class="desc">
+        Data is stored in Cloudflare D1, accessed through this site's own API and secured by Cloudflare Access (Google
+        sign-in, restricted to approved accounts). <strong>Every change is saved to D1 immediately</strong> —
+        uploads, master-data edits, all of it. There's no separate local state that would need to be saved
+        manually anymore, and no token to manage in this browser.
+      </div>
+      <div class="upload-row" style="margin-top:6px;">
+        <button class="btn ghost" id="neon-refresh">Reload from D1</button>
+        <button class="btn ghost" id="neon-export">Export current data as CSV</button>
+        <span class="hint mono" id="neon-status"></span>
+      </div>
+    </div>
+
+    <div class="section-title"><h2>2 · Upload Splint exports</h2><span class="hint">Only these two buttons touch the original files from Splint</span></div>
+    <div class="desc" style="margin:-6px 0 10px;">These uploads <strong>append</strong> new rows to the D1 tables — existing rows are never overwritten or deleted (price points are updated per asset/month, transactions are deduplicated by unique ID). Saved to D1 automatically right afterwards.</div>
+    <div class="grid cols-2">
+      <div class="card upload-card">
+        <strong><span class="step-num">A</span>Investment Opportunities Export</strong>
+        <div class="desc">Current positions with today's price. Added/updated as one price point per month in prices.csv (the latest upload for a given month only overwrites that month's value, never other months).</div>
+        <div class="upload-row">
+          <label class="hint mono" style="white-space:nowrap;">Price date</label>
+          <input type="date" id="opp-date">
+        </div>
+        <div class="upload-row">
+          <input type="file" id="load-opp" accept=".csv">
+          <button class="btn primary" id="upload-opp-btn" disabled>Upload</button>
+        </div>
+        <div class="hint mono" id="load-opp-filename"></div>
+      </div>
+      <div class="card upload-card">
+        <strong><span class="step-num">B</span>Activities Export</strong>
+        <div class="desc">Splint's complete transaction log. New transaction IDs are appended; existing ones are never duplicated or changed.</div>
+        <div class="upload-row">
+          <input type="file" id="load-act" accept=".csv">
+          <button class="btn primary" id="upload-act-btn" disabled>Upload</button>
+        </div>
+        <div class="hint mono" id="load-act-filename"></div>
+      </div>
+    </div>
+
+    <div class="section-title"><h2>Log</h2></div>
+    <div class="log-box" id="log-box">Ready.</div>
+  </section>
+
+</main>
+
+<footer class="foot">Splint Tracker · Munotstadt Suite · Data lives in Cloudflare D1, gated by Cloudflare Access</footer>
+
+<script type="module">
+/* =========================================================================
+   SPLINT TRACKER
+   Vanilla JS single-page tool. Data lives in Cloudflare D1, read/written via
+   this site's own Pages Functions (/api/:table), gated by Cloudflare Access
+   (Google sign-in, allowlisted account only — enforced at the edge before
+   this page ever loads). No local persistence — every edit is synced to D1
+   immediately.
+   ========================================================================= */
+
+// ---------------------------------------------------------------- D1 API CALLS --
+// Same call shape as the old Neon Data API layer (neonSelect/neonUpsert/neonDelete),
+// so every call site elsewhere in this file is unchanged — only the transport moved
+// from the Neon Data API to this site's own /api/:table Pages Functions backed by D1.
+async function d1Api(path, options = {}){
+  const res = await fetch('/api' + path, {
+    ...options,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
+  if (!res.ok){
+    let msg = res.status + ' ' + res.statusText;
+    try { const j = await res.json(); msg = j.error || msg; } catch(e){ /* ignore */ }
+    throw new Error(msg);
+  }
+  if (res.status === 204) return null;
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+function neonSelect(table, columns = '*'){
+  return d1Api('/' + table + '?select=' + encodeURIComponent(columns));
+}
+function neonUpsert(table, rows, onConflict){
+  return d1Api('/' + table + '?on_conflict=' + encodeURIComponent(onConflict), {
+    method: 'POST',
+    body: JSON.stringify(rows),
+  });
+}
+function neonDelete(table, filters){
+  // filters: {column: value, ...} -> exact-match .eq() filters, ANDed together
+  const qs = Object.entries(filters).map(([k,v]) => `${encodeURIComponent(k)}=eq.${encodeURIComponent(v)}`).join('&');
+  return d1Api('/' + table + '?' + qs, { method: 'DELETE' });
+}
+
+// ---------------------------------------------------------------- IDENTITY --
+// Cloudflare Access has already authenticated + authorized the request by the time
+// this script runs (it blocks at the edge, redirecting to Google itself). We just
+// ask our own /api/whoami for the signed-in email to show in the header.
+async function initAuth(){
+  try{
+    const who = await d1Api('/whoami');
+    document.getElementById('user-badge').style.display = 'flex';
+    document.getElementById('user-email').textContent = who.email;
+    await loadFromNeon();
+    renderAll();
+  } catch(err){
+    // Should not normally happen — Access would have blocked the request already.
+    document.getElementById('header-status').textContent = 'Access check failed: ' + err.message;
+  }
+}
+initAuth();
+
+// ---------------------------------------------------------------- STATE --
+const DB = {
+  transactions: [],   // {id, type, assetId, dateISO, dateDMY, amount, currency, pricePerSplint, fees, confirmation, splints}
+  prices: [],         // {assetId, month, dateDMY, price, currency}
+  master: {},         // assetId -> {assetId, assetName, category, subCategory, notes}
+  holdings: {},       // assetId -> {assetName, releaseDate, minHorizon, maxHorizon, owned, currentValue, avgPurchasePrice, performanceEUR, performancePct, currency}
+};
+
+let txSort = {key:'dateISO', dir:-1};
+
+// ---------------------------------------------------------------- UTILS --
+function parseCSV(text){
+  text = text.replace(/^\uFEFF/, '');
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\r') { /* skip */ }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  while(rows.length && rows[rows.length-1].every(f=>f==='')) rows.pop();
+  if (!rows.length) return [];
+  const headers = rows[0];
+  return rows.slice(1).map(r => {
+    const o = {};
+    headers.forEach((h, idx) => o[h] = r[idx] !== undefined ? r[idx] : '');
+    return o;
+  });
+}
+
+function csvEscape(v){
+  v = (v === undefined || v === null) ? '' : String(v);
+  if (/[",\n]/.test(v)) return '"' + v.replace(/"/g,'""') + '"';
+  return v;
+}
+function toCSV(headers, rows){
+  const lines = [headers.join(',')];
+  rows.forEach(r => lines.push(headers.map(h => csvEscape(r[h])).join(',')));
+  return lines.join('\r\n');
+}
+function downloadText(filename, content){
+  const blob = new Blob([content], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function parseMoney(s){
+  if (!s) return {amount:0, currency:''};
+  const parts = String(s).trim().split(' ');
+  return {amount: parseFloat(parts[0].replace(',','.')) || 0, currency: parts[1] || ''};
+}
+function dmyToISO(d){
+  if (!d) return '';
+  const parts = d.split('.');
+  if (parts.length !== 3) return d; // already ISO-ish
+  const [dd,mm,yyyy] = parts;
+  return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+}
+function isoToDMY(d){
+  if (!d) return '';
+  const [yyyy,mm,dd] = d.split('-');
+  return `${dd}.${mm}.${yyyy}`;
+}
+
+// ---------------------------------------------------------------- FX RATES (CHF conversion) --
+// Sourced from the Munotstadt accountingdatacollector repo's fx_rates.csv (columns: Date,
+// Currency, Rate, CollectedAt — one row per currency per day, rate = CHF value of 1 unit of
+// that currency). Loaded once per session in the background; tables using it re-render
+// automatically when it becomes available.
+const FX = {loaded:false, loading:false, rates:{}}; // rates['EUR/CHF'] = [{date:Date, rate:number}, ...] ascending
+function parseGhDateTime(s){
+  // "DD.MM.YYYY HH:MM:SS" -> Date
+  if (!s) return new Date(NaN);
+  const [datePart, timePart] = s.trim().split(' ');
+  const parts = (datePart||'').split('.');
+  if (parts.length !== 3) return new Date(NaN);
+  const [dd,mm,yyyy] = parts;
+  return new Date(`${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}T${timePart||'00:00:00'}`);
+}
+async function loadFxRates(){
+  if (FX.loaded || FX.loading) return;
+  FX.loading = true;
+  try{
+    const res = await fetch('https://raw.githubusercontent.com/Munotstadt/accountingdatacollector/refs/heads/main/fx_rates.csv');
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const text = await res.text();
+    const rows = parseCSV(text);
+    const byPair = {};
+    rows.forEach(r => {
+      const currency = (r['Currency']||'').trim().toUpperCase();
+      if (!currency) return;
+      const rate = parseFloat(r['Rate']);
+      if (isNaN(rate)) return;
+      const dt = parseGhDateTime(r['Date']);
+      if (isNaN(dt.getTime())) return;
+      const pair = currency + '/CHF';
+      if (!byPair[pair]) byPair[pair] = [];
+      byPair[pair].push({date: dt, rate});
+    });
+    Object.keys(byPair).forEach(name => byPair[name].sort((a,b)=>a.date-b.date));
+    FX.rates = byPair;
+    FX.loaded = true;
+    log(`FX rates loaded from accountingdatacollector: ${Object.keys(byPair).map(k=>`${k} (${byPair[k].length})`).join(', ') || 'none found'}.`);
+    renderAll();
+  } catch(err){
+    log('Could not load FX rates from accountingdatacollector (Price CHF / Value CHF will stay blank): '+err.message, true);
+  } finally {
+    FX.loading = false;
+  }
+}
+// Fills in the FX Rate field for any transaction that doesn't have one yet, from the loaded FX
+// data. This value is then a normal, persisted, editable field in transactions.csv — once set
+// (auto or manually), it is never silently overwritten again. Returns true if anything changed.
+function backfillFxRates(){
+  if (!FX.loaded) return false;
+  let changed = false;
+  DB.transactions.forEach(t => {
+    if (t.fxRate === undefined || t.fxRate === null || t.fxRate === ''){
+      const rate = chfRateForCurrencyAtDate(t.currency, t.dateISO);
+      if (rate !== null){ t.fxRate = Math.round(rate*10000)/10000; changed = true; }
+    }
+  });
+  return changed;
+}
+// Best-known CHF rate for a currency as of a given transaction date: the latest known rate at or
+// before that date. Returns null (leave FX / Value CHF blank) if the pair isn't known, hasn't
+// loaded yet, or the transaction predates the earliest available rate for that pair — no
+// forward- or backward-guessing across dates with no actual data.
+function chfRateForCurrencyAtDate(currency, dateISO){
+  if (!currency) return null;
+  if (currency.toUpperCase() === 'CHF') return 1;
+  const series = FX.rates[currency.toUpperCase()+'/CHF'];
+  if (!series || !series.length) return null;
+  const target = new Date(dateISO+'T23:59:59');
+  let best = null;
+  for (const p of series){ if (p.date <= target) best = p; else break; }
+  return best ? best.rate : null;
+}
+function monthLabel(m){
+  const [y,mo] = m.split('-');
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return names[parseInt(mo,10)-1] + ' ' + y.slice(2);
+}
+function fmtNum(n, decimals=2){
+  if (n === undefined || n === null || isNaN(n)) return '—';
+  return n.toLocaleString('de-CH', {minimumFractionDigits:decimals, maximumFractionDigits:decimals});
+}
+function fmtMoney(n, currency='EUR', decimals=2){
+  if (n === undefined || n === null || isNaN(n)) return '—';
+  const sign = n < 0 ? '−' : '';
+  return sign + Math.abs(n).toLocaleString('de-CH', {minimumFractionDigits:decimals, maximumFractionDigits:decimals}) + ' ' + currency;
+}
+function fmtPct(n, decimals=2){
+  if (n === undefined || n === null || isNaN(n)) return '—';
+  const sign = n > 0 ? '+' : '';
+  return sign + n.toLocaleString('de-CH', {minimumFractionDigits:decimals, maximumFractionDigits:decimals}) + '%';
+}
+// Positive -> green, negative -> red, zero/null/unknown -> neutral grey.
+function signColor(n){
+  if (n === undefined || n === null || isNaN(n) || n === 0) return 'var(--ink-soft)';
+  return n > 0 ? 'var(--green)' : 'var(--red)';
+}
+// Soft pastel red→yellow→green background for a value t normalized to [0,1] within its row's range.
+function heatColor(t){
+  const hue = Math.max(0, Math.min(1, t)) * 120; // 0=red, 60=yellow, 120=green
+  return `hsl(${hue.toFixed(0)}, 70%, 88%)`;
+}
+function todayISO(){
+  const d = new Date();
+  return d.toISOString().slice(0,10);
+}
+function log(msg, isErr){
+  const box = document.getElementById('log-box');
+  const time = new Date().toLocaleTimeString('de-CH');
+  const line = document.createElement('div');
+  if (isErr) line.className = 'err';
+  line.textContent = `[${time}] ${msg}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function ensureMaster(assetId, assetName){
+  if (!DB.master[assetId]){
+    DB.master[assetId] = {assetId, assetName: assetName || assetId, category:'', subCategory:'', categoryOld:'', notes:'', releaseDate:'', minHorizon:'', maxHorizon:'', eROI:''};
+  } else if (assetName && (!DB.master[assetId].assetName || DB.master[assetId].assetName === assetId)) {
+    DB.master[assetId].assetName = assetName;
+  }
+  return DB.master[assetId];
+}
+function assetName(assetId){
+  return (DB.master[assetId] && DB.master[assetId].assetName) || assetId;
+}
+// Guarantees exactly one price per asset+month: re-derives the month key from the stored date
+// (rather than trusting a possibly-stale/mismatched Month column) and, if duplicates exist for
+// the same asset+month, keeps the one with the most recent exact date. Safe to call repeatedly.
+// Repairs malformed Month strings like "2025-1-" (missing zero-padding + a stray trailing dash,
+// seen in some older exports) back into the canonical "YYYY-MM" form. Leaves already-correct or
+// genuinely unrecognizable values untouched.
+function normalizeMonthString(m){
+  m = (m || '').trim();
+  if (/^\d{4}-\d{2}$/.test(m)) return m;
+  const match = m.match(/^(\d{4})-(\d{1,2})-?$/);
+  if (match) return match[1] + '-' + String(parseInt(match[2], 10)).padStart(2, '0');
+  return m;
+}
+function normalizePrices(){
+  const byKey = {};
+  DB.prices.forEach(p => {
+    let month;
+    if (p.dateDMY){
+      const iso = dmyToISO(p.dateDMY);
+      month = iso ? iso.slice(0,7) : normalizeMonthString(p.month);
+    } else {
+      month = normalizeMonthString(p.month);
+    }
+    const key = p.assetId + '|' + month;
+    const candidate = {...p, month};
+    const existing = byKey[key];
+    if (!existing || (candidate.dateDMY && (!existing.dateDMY || dmyToISO(candidate.dateDMY) >= dmyToISO(existing.dateDMY)))) {
+      byKey[key] = candidate;
+    }
+  });
+  DB.prices = Object.values(byKey);
+}
+
+// ---------------------------------------------------------------- IMPORT --
+function importPricesCSV(text){
+  const rows = parseCSV(text);
+  let added = 0;
+  rows.forEach(r => {
+    const assetId = r['AssetID'] || r['Asset ID'];
+    if (!assetId) return;
+    const month = r['Month'];
+    const existing = DB.prices.find(p => p.assetId === assetId && p.month === month);
+    const entry = {assetId, month, dateDMY: r['Date'], price: parseFloat(r['Price']) || 0, currency: r['Currency'] || 'EUR'};
+    if (existing) Object.assign(existing, entry); else { DB.prices.push(entry); added++; }
+  });
+  log(`prices.csv loaded: ${rows.length} rows, ${added} new.`);
+}
+
+function importTransactionsCSV(text, sourceLabel){
+  const rows = parseCSV(text);
+  let added = 0;
+  rows.forEach(r => {
+    const id = r['Transaction ID'] || r['id'];
+    if (!id) return;
+    if (DB.transactions.find(t => t.id === id)) return; // dedup
+    const amountP = parseMoney(r['Money Amount'] || r['amount']);
+    const priceP = parseMoney(r['Purchase/Sale Price Per Splint'] || r['pricePerSplint']);
+    const feesP = parseMoney(r['Fees'] || r['fees']);
+    const dateDMY = r['Date Of Transaction'] || r['date'];
+    const splints = priceP.amount ? Math.round((amountP.amount / priceP.amount) * 100) / 100 : 1;
+    DB.transactions.push({
+      id,
+      type: r['Transaction Type'] || r['type'],
+      assetId: r['Asset ID'] || r['assetId'],
+      dateDMY,
+      dateISO: dmyToISO(dateDMY),
+      amount: amountP.amount,
+      currency: amountP.currency || 'EUR',
+      pricePerSplint: priceP.amount,
+      fees: feesP.amount,
+      confirmation: r['Purchase/Sale Confirmation'] || r['confirmation'] || '',
+      splints,
+      day1Profit: (r['Day1Profit'] !== undefined && r['Day1Profit'] !== null) ? r['Day1Profit'] : '',
+      fxRate: (r['FX Rate'] !== undefined && r['FX Rate'] !== null && r['FX Rate'] !== '') ? r['FX Rate'] : '',
+    });
+    added++;
+  });
+  log(`${sourceLabel} loaded: ${rows.length} rows, ${added} new transactions.`);
+}
+
+function importMasterCSV(text){
+  const rows = parseCSV(text);
+  rows.forEach(r => {
+    const assetId = r['AssetID'] || r['Asset ID'];
+    if (!assetId) return;
+    DB.master[assetId] = {
+      assetId,
+      assetName: r['Asset Name'] || assetId,
+      category: r['Asset Category'] || '',
+      subCategory: r['Asset SubCategory'] || '',
+      categoryOld: r['Asset Category_old'] || '',
+      notes: r['Notes'] || '',
+      releaseDate: r['Release Date'] || '',
+      minHorizon: r['Min Horizon'] || '',
+      maxHorizon: r['Max Horizon'] || '',
+      eROI: r['eROI'] || '',
+    };
+  });
+  log(`stammdaten.csv loaded: ${rows.length} assets.`);
+}
+
+function importOpportunitiesCSV(text, asOfISO){
+  const rows = parseCSV(text);
+  DB.holdings = {}; // this file is always a full current snapshot -> full replace
+  const asOfMonth = asOfISO.slice(0,7);
+  const asOfDMY = isoToDMY(asOfISO);
+  let priceUpserts = 0;
+  rows.forEach(r => {
+    const assetId = r['Asset ID'];
+    if (!assetId) return;
+    const name = r['Asset Name'];
+    ensureMaster(assetId, name);
+    const releaseDate = (r['Release Date']||'').slice(0,10);
+    const minHorizon = r['Minimum Investment Horizon'];
+    const maxHorizon = r['Maximum Investment Horizon'];
+    if (releaseDate) DB.master[assetId].releaseDate = releaseDate;
+    if (minHorizon) DB.master[assetId].minHorizon = minHorizon;
+    if (maxHorizon) DB.master[assetId].maxHorizon = maxHorizon;
+    DB.holdings[assetId] = {
+      assetName: name,
+      releaseDate,
+      minHorizon,
+      maxHorizon,
+      owned: parseFloat(r['Owned Splints']) || 0,
+      currentValue: parseFloat(r['Current Splint Value']) || 0,
+      avgPurchasePrice: parseFloat(r['Average Purchase Price Per Splint']) || 0,
+      performanceEUR: parseFloat(r['Performance In EUR']) || 0,
+      performancePct: parseFloat(r['Average Performance In %']) || 0,
+      currency: r['Currency'] || 'EUR',
+    };
+    // upsert monthly price point
+    const existing = DB.prices.find(p => p.assetId === assetId && p.month === asOfMonth);
+    const entry = {assetId, month: asOfMonth, dateDMY: asOfDMY, price: parseFloat(r['Current Splint Value']) || 0, currency: r['Currency'] || 'EUR'};
+    if (existing) Object.assign(existing, entry); else { DB.prices.push(entry); }
+    priceUpserts++;
+  });
+  log(`Investment Opportunities loaded: ${rows.length} open positions as of ${asOfDMY}. ${priceUpserts} price points updated/added in prices.csv.`);
+}
+
+// ---------------------------------------------------------------- DERIVED --
+// Derives the currently open quantity and cost basis purely from the persisted transaction
+// ledger (moving-average-cost method). This is the durable source of truth for "is this asset
+// still held" — it stays correct even in a session where the Investment Opportunities file
+// hasn't been (re-)uploaded yet, e.g. right after loading saved data from GitHub.
+function computeOpenPosition(assetId, asOfMonth){
+  let txs = DB.transactions.filter(t => t.assetId === assetId);
+  if (asOfMonth) txs = txs.filter(t => t.dateISO.slice(0,7) <= asOfMonth);
+  txs = txs.slice().sort((a,b)=> a.dateISO < b.dateISO ? -1 : (a.dateISO > b.dateISO ? 1 : 0));
+  // No transaction history known for this asset yet (e.g. the Opportunities file was uploaded
+  // before the Activities file this session) — fall back to the live broker snapshot so the
+  // position isn't shown as empty just because of upload order. Only applies to "as of now"
+  // lookups (asOfMonth omitted); historical cutoffs must stay purely ledger-derived.
+  if (txs.length === 0){
+    if (!asOfMonth){
+      const h = DB.holdings[assetId];
+      if (h && h.owned > 0) return {qty: h.owned, costBasis: h.owned * h.avgPurchasePrice};
+    }
+    return {qty: 0, costBasis: 0};
+  }
+  let qty = 0, cost = 0;
+  txs.forEach(t => {
+    if (/purchase/i.test(t.type)){
+      qty += t.splints;
+      cost += (t.amount + t.fees);
+    } else {
+      const avgCost = qty > 0 ? cost / qty : 0;
+      const soldQty = Math.min(t.splints, qty);
+      cost -= avgCost * soldQty;
+      qty -= soldQty;
+    }
+  });
+  qty = Math.round(qty * 100) / 100;
+  if (qty < 0.0001) { qty = 0; cost = 0; }
+  return {qty, costBasis: cost};
+}
+// Current price per splint: prefer this session's live Investment-Opportunities snapshot
+// (most precise, broker-supplied), else fall back to the latest persisted monthly price —
+// so a held position still shows a (slightly less fresh) value even without re-uploading.
+function currentPricePerSplint(assetId){
+  const h = DB.holdings[assetId];
+  if (h && h.owned > 0) return {price: h.currentValue, currency: h.currency};
+  const lp = latestPrice(assetId);
+  return lp ? {price: lp.price, currency: lp.currency} : {price: null, currency: 'EUR'};
+}
+function isCurrentlyHeld(assetId){
+  return computeOpenPosition(assetId).qty > 0.0001;
+}
+// Estimated target-exit year: release year + average of min/max investment horizon (rounded).
+// e.g. Release 2023, Horizont 5-7 Jahre -> Schnitt 6 Jahre -> 2023 + 6 = 2029.
+function computeTargetExitYear(assetId){
+  const m = DB.master[assetId];
+  if (!m || !m.releaseDate) return null;
+  const releaseYear = parseInt(m.releaseDate.slice(0,4), 10);
+  const minH = parseFloat(m.minHorizon), maxH = parseFloat(m.maxHorizon);
+  if (!releaseYear || isNaN(minH) || isNaN(maxH)) return null;
+  const avgH = Math.round((minH + maxH) / 2);
+  return releaseYear + avgH;
+}
+// eROI (manually entered expected ROI, in %) vs. the realized/current IRR p.a. (a decimal rate,
+// e.g. 0.15 = 15%). Returns eROI% - IRR%, or null if eROI is missing or IRR can't be computed.
+// eROI (manually entered expected ROI, in %) vs. the realized/current IRR p.a. (a decimal rate,
+// e.g. 0.15 = 15%). Returns IRR% - eROI%, or null if eROI is missing or IRR can't be computed.
+// Example: IRR 2.5%, eROI 25% -> 2.5 - 25 = -22.5%.
+function computeEroiVsIrr(assetId, irr){
+  const m = DB.master[assetId];
+  const eroiRaw = m ? m.eROI : '';
+  if (eroiRaw === '' || eroiRaw === undefined || eroiRaw === null) return null;
+  const eroi = parseFloat(eroiRaw);
+  if (isNaN(eroi) || irr === null || irr === undefined || isNaN(irr)) return null;
+  return irr * 100 - eroi;
+}
+function latestPrice(assetId){
+  const list = DB.prices.filter(p => p.assetId === assetId).sort((a,b)=> a.month < b.month ? -1 : 1);
+  return list.length ? list[list.length-1] : null;
+}
+function assetPriceSeries(assetId){
+  return DB.prices.filter(p => p.assetId === assetId).sort((a,b)=> a.month < b.month ? -1 : 1);
+}
+function allMonthsSorted(){
+  const set = new Set(DB.prices.map(p => p.month));
+  return Array.from(set).sort();
+}
+function allAssetIds(){
+  const set = new Set();
+  Object.keys(DB.master).forEach(id=>set.add(id));
+  Object.keys(DB.holdings).forEach(id=>set.add(id));
+  DB.transactions.forEach(t=>set.add(t.assetId));
+  DB.prices.forEach(p=>set.add(p.assetId));
+  return Array.from(set);
+}
+
+function computeKPIs(){
+  let currentValue = 0, costBasis = 0, unrealized = 0, splintsTotal = 0, heldCount = 0;
+  allAssetIds().forEach(id => {
+    const pos = computeOpenPosition(id);
+    if (pos.qty <= 0.0001) return;
+    const cp = currentPricePerSplint(id);
+    const val = cp.price === null ? 0 : pos.qty * cp.price;
+    currentValue += val;
+    costBasis += pos.costBasis;
+    unrealized += (val - pos.costBasis);
+    splintsTotal += pos.qty;
+    heldCount++;
+  });
+  const ledger = computeRealizedLedger();
+  const realized = ledger.reduce((sum, e) => sum + e.gain, 0);
+  const exitedCount = allAssetIds().filter(id => !isCurrentlyHeld(id) && DB.transactions.some(t=>t.assetId===id)).length;
+  return {currentValue, costBasis, unrealized, realized, total: unrealized+realized, splintsTotal, heldCount, exitedCount};
+}
+
+// Moving-average-cost ledger: walks every asset's transactions in date order, tracking a running
+// quantity and cost basis. Each sale realizes a gain = proceeds − (average cost × splints sold).
+// This correctly captures partial sales too, not just fully-exited assets.
+function computeRealizedLedger(){
+  const byAsset = {};
+  DB.transactions.forEach(t => {
+    if (!byAsset[t.assetId]) byAsset[t.assetId] = [];
+    byAsset[t.assetId].push(t);
+  });
+  const entries = [];
+  Object.keys(byAsset).forEach(assetId => {
+    const txs = byAsset[assetId].slice().sort((a,b)=> a.dateISO < b.dateISO ? -1 : (a.dateISO > b.dateISO ? 1 : 0));
+    let qty = 0, cost = 0;
+    txs.forEach(t => {
+      if (/purchase/i.test(t.type)){
+        qty += t.splints;
+        cost += (t.amount + t.fees);
+      } else {
+        const avgCost = qty > 0 ? cost / qty : 0;
+        const soldQty = Math.min(t.splints, qty);
+        const costOfSold = avgCost * soldQty;
+        const gain = (t.amount - t.fees) - costOfSold;
+        entries.push({assetId, dateISO: t.dateISO, dateDMY: t.dateDMY, gain});
+        qty -= soldQty;
+        cost -= costOfSold;
+      }
+    });
+  });
+  return entries;
+}
+
+// ---------------------------------------------------------------- XIRR (money-weighted, annualized) --
+function npvAt(cashflows, rate){
+  const t0 = cashflows[0].date;
+  return cashflows.reduce((sum, cf) => {
+    const years = (cf.date - t0) / (1000*60*60*24*365);
+    return sum + cf.amount / Math.pow(1 + rate, years);
+  }, 0);
+}
+function xirr(cashflows){
+  // cashflows: [{date: Date, amount: number}], needs at least one negative and one positive amount
+  const sorted = cashflows.slice().sort((a,b) => a.date - b.date);
+  const hasPos = sorted.some(cf => cf.amount > 0);
+  const hasNeg = sorted.some(cf => cf.amount < 0);
+  if (!hasPos || !hasNeg) return null;
+
+  // Newton's method first (fast, precise)
+  let rate = 0.15;
+  for (let i = 0; i < 100; i++){
+    const t0 = sorted[0].date;
+    const f = npvAt(sorted, rate);
+    const df = sorted.reduce((sum, cf) => {
+      const years = (cf.date - t0) / (1000*60*60*24*365);
+      return sum - years * cf.amount / Math.pow(1 + rate, years + 1);
+    }, 0);
+    if (Math.abs(df) < 1e-9) break;
+    const next = rate - f/df;
+    if (!isFinite(next) || next <= -0.999999) break;
+    if (Math.abs(next - rate) < 1e-8) return next;
+    rate = next;
+  }
+  if (isFinite(rate) && Math.abs(npvAt(sorted, rate)) < 1) return rate;
+
+  // Bisection fallback (robust, slower) over -99.99% .. 1000% p.a.
+  let lo = -0.9999, hi = 10;
+  let fLo = npvAt(sorted, lo), fHi = npvAt(sorted, hi);
+  let expand = 0;
+  while (fLo * fHi > 0 && expand < 40 && hi < 1e6){ hi *= 2; fHi = npvAt(sorted, hi); expand++; }
+  if (fLo * fHi > 0) return null; // no sign change found -> no solvable root in range
+  for (let i = 0; i < 200; i++){
+    const mid = (lo + hi) / 2;
+    const fMid = npvAt(sorted, mid);
+    if (Math.abs(fMid) < 1e-6) return mid;
+    if (fLo * fMid < 0) { hi = mid; fHi = fMid; } else { lo = mid; fLo = fMid; }
+  }
+  return (lo + hi) / 2;
+}
+
+function computeSecurityPerformance(assetId){
+  const txs = DB.transactions.filter(t => t.assetId === assetId);
+  let invested = 0, divested = 0;
+  const cashflows = [];
+  txs.forEach(t => {
+    if (/purchase/i.test(t.type)){
+      invested += (t.amount + t.fees);
+      cashflows.push({date: new Date(t.dateISO), amount: -(t.amount + t.fees)});
+    } else {
+      divested += (t.amount - t.fees);
+      cashflows.push({date: new Date(t.dateISO), amount: (t.amount - t.fees)});
+    }
+  });
+  const pos = computeOpenPosition(assetId);
+  let terminalValue = 0;
+  if (pos.qty > 0.0001){
+    const cp = currentPricePerSplint(assetId);
+    if (cp.price !== null){
+      terminalValue = pos.qty * cp.price;
+      cashflows.push({date: new Date(), amount: terminalValue});
+    }
+  }
+  const absolute = divested + terminalValue - invested;
+  const relativePct = invested > 0 ? (absolute / invested) * 100 : null;
+  const irrRate = cashflows.length >= 2 ? xirr(cashflows) : null;
+  return {absolute, relativePct, invested, irr: irrRate};
+}
+
+function assetFirstBuyDate(assetId){
+  const buys = DB.transactions.filter(t => t.assetId === assetId && /purchase/i.test(t.type));
+  if (!buys.length) return null;
+  return buys.reduce((min, t) => (t.dateISO < min ? t.dateISO : min), buys[0].dateISO);
+}
+function assetLastExitDate(assetId){
+  const sales = DB.transactions.filter(t => t.assetId === assetId && !/purchase/i.test(t.type));
+  if (!sales.length) return null;
+  return sales.reduce((max, t) => (t.dateISO > max ? t.dateISO : max), sales[0].dateISO);
+}
+// Holding period in years: (today, or the exit date if fully sold) minus the first buy date.
+function computeHoldingPeriodYears(assetId){
+  const firstBuy = assetFirstBuyDate(assetId);
+  if (!firstBuy) return null;
+  const held = isCurrentlyHeld(assetId);
+  const exitDate = held ? null : assetLastExitDate(assetId);
+  const endDate = exitDate ? new Date(exitDate+'T00:00:00') : new Date();
+  const startDate = new Date(firstBuy+'T00:00:00');
+  return (endDate - startDate) / (1000*60*60*24*365.25);
+}
+
+function computePortfolioIRR(assetIds){
+  const idSet = assetIds ? new Set(assetIds) : null;
+  const cashflows = [];
+  DB.transactions.forEach(t => {
+    if (idSet && !idSet.has(t.assetId)) return;
+    if (/purchase/i.test(t.type)) cashflows.push({date: new Date(t.dateISO), amount: -(t.amount + t.fees)});
+    else cashflows.push({date: new Date(t.dateISO), amount: (t.amount - t.fees)});
+  });
+  const today = new Date();
+  const ids = idSet ? Array.from(idSet) : allAssetIds();
+  ids.forEach(id => {
+    const pos = computeOpenPosition(id);
+    if (pos.qty <= 0.0001) return;
+    const cp = currentPricePerSplint(id);
+    if (cp.price !== null) cashflows.push({date: today, amount: pos.qty * cp.price});
+  });
+  return cashflows.length >= 2 ? xirr(cashflows) : null;
+}
+
+// ---------------------------------------------------------------- ASSET LINKS (navigate to Security tab) --
+function assetLinkHTML(assetId, label){
+  return `<a href="#" class="asset-link" data-asset-id="${escapeHtml(assetId)}">${escapeHtml(label)}</a>`;
+}
+function goToSecurity(assetId){
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+  document.querySelector('nav.tabs button[data-view="securities"]').classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-securities').classList.add('active');
+  document.getElementById('sec-search').value = '';
+  populateSecuritySelect();
+  document.getElementById('sec-select').value = assetId;
+  renderSecurityDetail(assetId);
+  window.scrollTo({top:0});
+}
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('.asset-link');
+  if (link){ e.preventDefault(); goToSecurity(link.dataset.assetId); }
+});
+
+// ---------------------------------------------------------------- CHARTS --
+function svgLineChart(points, opts={}){
+  // points: [{label, value}]
+  const w = opts.width || 900, h = opts.height || 220;
+  const padL = 54, padR = 16, padT = 16, padB = 28;
+  const innerW = w - padL - padR, innerH = h - padT - padB;
+  if (!points.length) return `<div class="empty-state" style="border:none;padding:30px;">Keine Kursdaten vorhanden.</div>`;
+  const values = points.map(p=>p.value);
+  let min = Math.min(...values), max = Math.max(...values);
+  if (min === max) { min -= 1; max += 1; }
+  const range = max - min;
+  const x = i => padL + (points.length===1 ? innerW/2 : (i/(points.length-1)) * innerW);
+  const y = v => padT + innerH - ((v - min)/range) * innerH;
+
+  const linePts = points.map((p,i)=>`${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+  const areaPts = `${x(0).toFixed(1)},${(padT+innerH).toFixed(1)} ${linePts} ${x(points.length-1).toFixed(1)},${(padT+innerH).toFixed(1)}`;
+
+  let ticksY = '';
+  const nTicks = 4;
+  for(let i=0;i<=nTicks;i++){
+    const v = min + (range * i/nTicks);
+    const yy = y(v);
+    ticksY += `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${w-padR}" y2="${yy.toFixed(1)}" stroke="#eceef0" stroke-width="1"/>`;
+    ticksY += `<text x="${padL-8}" y="${(yy+3).toFixed(1)}" text-anchor="end" class="chart-tooltip-label">${fmtNum(v,0)}</text>`;
+  }
+  let labelsX = '';
+  const step = Math.max(1, Math.ceil(points.length/8));
+  points.forEach((p,i)=>{
+    if (i % step === 0 || i === points.length-1){
+      labelsX += `<text x="${x(i).toFixed(1)}" y="${h-8}" text-anchor="middle" class="chart-tooltip-label">${p.label}</text>`;
+    }
+  });
+  let dots = '';
+  points.forEach((p,i)=>{
+    dots += `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="2.6" fill="#E30613"><title>${p.label}: ${fmtNum(p.value)}</title></circle>`;
+  });
+
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="xMidYMid meet">
+    ${ticksY}
+    <polygon points="${areaPts}" fill="#E30613" opacity="0.07"/>
+    <polyline points="${linePts}" fill="none" stroke="#E30613" stroke-width="2"/>
+    ${dots}
+    ${labelsX}
+  </svg>`;
+}
+
+// Zeitablauf: a horizontal milestone timeline for one asset — Release, Buy(s), Sale(s), Today,
+// and a shaded band for the expected exit window (release date + min/max investment horizon).
+function svgAssetTimeline(assetId, releaseDate, minHorizon, maxHorizon){
+  const w = 900, h = 170;
+  const padL = 50, padR = 50;
+  const midY = 95;
+
+  // Collect + group events (same date + type collapse into one marker with a ×N count)
+  const raw = [];
+  if (releaseDate) raw.push({date: new Date(releaseDate+'T00:00:00'), label: 'Release', type: 'release'});
+  DB.transactions.filter(t=>t.assetId===assetId).forEach(t => {
+    raw.push({date: new Date(t.dateISO+'T00:00:00'), label: /purchase/i.test(t.type) ? 'Buy' : 'Sale', type: /purchase/i.test(t.type) ? 'buy' : 'sell'});
+  });
+  const today = new Date(); today.setHours(0,0,0,0);
+  raw.push({date: today, label: 'Today', type: 'today'});
+
+  const grouped = {};
+  raw.forEach(e => {
+    const key = e.date.toISOString().slice(0,10) + '|' + e.type;
+    if (!grouped[key]) grouped[key] = {...e, count:0};
+    grouped[key].count++;
+  });
+  const events = Object.values(grouped).sort((a,b)=>a.date-b.date);
+  if (!events.length) return `<div class="empty-state" style="border:none;padding:30px;">No dates available yet.</div>`;
+
+  // Expected exit window band: release + min horizon .. release + max horizon (years, may be fractional)
+  let band = null;
+  const minH = parseFloat(minHorizon), maxH = parseFloat(maxHorizon);
+  if (releaseDate && !isNaN(minH) && !isNaN(maxH)){
+    const rd = new Date(releaseDate+'T00:00:00');
+    const start = new Date(rd); start.setMonth(start.getMonth() + Math.round(minH*12));
+    const end = new Date(rd); end.setMonth(end.getMonth() + Math.round(maxH*12));
+    band = {start, end, label: `Expected exit window (${minHorizon}–${maxHorizon}y)`};
+  }
+
+  const allDates = events.map(e=>e.date).concat(band?[band.start,band.end]:[]);
+  let minD = new Date(Math.min(...allDates.map(d=>d.getTime())));
+  let maxD = new Date(Math.max(...allDates.map(d=>d.getTime())));
+  const span = Math.max(1, maxD - minD);
+  minD = new Date(minD.getTime() - span*0.08);
+  maxD = new Date(maxD.getTime() + span*0.08);
+  const range = maxD - minD;
+  const x = d => padL + ((d - minD)/range) * (w - padL - padR);
+
+  const colors = {release:'var(--ink-soft)', buy:'var(--green)', sell:'var(--red)', today:'var(--ink)'};
+
+  let bandSvg = '';
+  if (band){
+    const x1 = x(band.start), x2 = x(band.end);
+    bandSvg = `<rect x="${x1.toFixed(1)}" y="${(midY-16).toFixed(1)}" width="${Math.max(1,x2-x1).toFixed(1)}" height="32" fill="var(--red)" opacity="0.08" rx="3"/>
+      <text x="${((x1+x2)/2).toFixed(1)}" y="${(midY-22).toFixed(1)}" text-anchor="middle" class="chart-tooltip-label" fill="var(--red)">${escapeHtml(band.label)}</text>`;
+  }
+
+  const axisLine = `<line x1="${padL}" y1="${midY}" x2="${w-padR}" y2="${midY}" stroke="var(--line)" stroke-width="2"/>`;
+
+  let markers = '';
+  events.forEach((e,i) => {
+    const xx = x(e.date);
+    const above = i % 2 === 0;
+    const color = colors[e.type] || 'var(--ink)';
+    const labelText = e.count > 1 ? `${e.label} ×${e.count}` : e.label;
+    const labelY = above ? midY - 20 : midY + 34;
+    const dateY = above ? midY - 34 : midY + 48;
+    const tickY1 = midY, tickY2 = above ? midY - 12 : midY + 12;
+    markers += `<line x1="${xx.toFixed(1)}" y1="${tickY1}" x2="${xx.toFixed(1)}" y2="${tickY2.toFixed(1)}" stroke="${color}" stroke-width="1.5"/>`;
+    markers += `<circle cx="${xx.toFixed(1)}" cy="${midY}" r="5.5" fill="${color}"/>`;
+    markers += `<text x="${xx.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle" font-family="'Space Grotesk',sans-serif" font-size="11.5" font-weight="600" fill="${color}">${escapeHtml(labelText)}</text>`;
+    markers += `<text x="${xx.toFixed(1)}" y="${dateY.toFixed(1)}" text-anchor="middle" class="chart-tooltip-label">${isoToDMY(e.date.toISOString().slice(0,10))}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="xMidYMid meet">
+    ${bandSvg}
+    ${axisLine}
+    ${markers}
+  </svg>`;
+}
+
+// Price History: value/splint on the left axis (line, 2 decimals) + monthly change in % on
+// the right axis (bars, 1 decimal, labeled at the bar). All points/bars are tappable
+// (touch-friendly instead of hover tooltips) and show the exact value in the readout below the chart.
+function svgPriceChangeChart(series, opts={}){
+  // series: [{month, price}] ascending by month
+  const w = opts.width || 900, h = opts.height || 260;
+  const padL = 54, padR = 54, padT = 16, padB = 28;
+  const innerW = w - padL - padR, innerH = h - padT - padB;
+  if (!series.length) return `<div class="empty-state" style="border:none;padding:30px;">Keine Kursdaten vorhanden.</div>`;
+  const n = series.length;
+  const prices = series.map(p=>p.price);
+  let pMin = Math.min(...prices), pMax = Math.max(...prices);
+  if (pMin === pMax){ pMin -= 1; pMax += 1; }
+  const pPad = (pMax-pMin)*0.1 || 1;
+  pMin -= pPad; pMax += pPad;
+  const pRange = pMax - pMin;
+
+  const changes = series.map((p,i)=> i===0 ? null : (series[i-1].price ? ((p.price - series[i-1].price)/series[i-1].price*100) : null));
+  const changeVals = changes.filter(v=>v!==null);
+  let cMax = changeVals.length ? Math.max(...changeVals.map(Math.abs)) : 1;
+  if (cMax === 0) cMax = 1;
+  cMax *= 1.4; // extra headroom so bar-top labels don't get clipped
+  const cRange = cMax*2;
+
+  const x = i => padL + (n===1 ? innerW/2 : (i/(n-1))*innerW);
+  const yPrice = v => padT + innerH - ((v-pMin)/pRange)*innerH;   // left axis: value/splint
+  const yChange = v => padT + innerH - ((v+cMax)/cRange)*innerH;  // right axis: % change
+  const zeroY = yChange(0);
+
+  let ticksLeft = '', ticksRight = '';
+  const nTicks = 4;
+  for(let i=0;i<=nTicks;i++){
+    const v = pMin + (pRange*i/nTicks);
+    const yy = yPrice(v);
+    if (i>0 && i<nTicks) ticksLeft += `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${w-padR}" y2="${yy.toFixed(1)}" stroke="#eceef0" stroke-width="1"/>`;
+    ticksLeft += `<text x="${padL-8}" y="${(yy+3).toFixed(1)}" text-anchor="end" class="chart-tooltip-label">${fmtNum(v,2)}</text>`;
+  }
+  for(let i=0;i<=nTicks;i++){
+    const v = -cMax + (cRange*i/nTicks);
+    const yy = yChange(v);
+    ticksRight += `<text x="${w-padR+8}" y="${(yy+3).toFixed(1)}" text-anchor="start" class="chart-tooltip-label">${fmtNum(v,1)}%</text>`;
+  }
+  ticksRight += `<line x1="${padL}" y1="${zeroY.toFixed(1)}" x2="${w-padR}" y2="${zeroY.toFixed(1)}" stroke="#d8dadd" stroke-width="1" stroke-dasharray="3,3"/>`;
+
+  let labelsX = '';
+  const step = Math.max(1, Math.ceil(n/8));
+  series.forEach((p,i)=>{
+    if (i % step === 0 || i === n-1){
+      labelsX += `<text x="${x(i).toFixed(1)}" y="${h-8}" text-anchor="middle" class="chart-tooltip-label">${monthLabel(p.month)}</text>`;
+    }
+  });
+
+  const barW = Math.max(6, (innerW/n)*0.5);
+  let bars = '';
+  changes.forEach((c,i)=>{
+    if (c === null) return;
+    const yTop = Math.min(yChange(c), zeroY);
+    const barH = Math.max(1, Math.abs(yChange(c) - zeroY));
+    const color = signColor(c);
+    const dataAttrs = `data-month="${series[i].month}" data-price="${series[i].price}" data-change="${c.toFixed(2)}"`;
+    bars += `<rect class="chart-point" ${dataAttrs} x="${(x(i)-barW/2).toFixed(1)}" y="${yTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${color}" opacity="0.85"/>`;
+    const labelY = c >= 0 ? (yTop - 4) : (yTop + barH + 10);
+    bars += `<text class="chart-point" ${dataAttrs} x="${x(i).toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle" font-size="9.5" fill="${color}">${fmtPct(c,1)}</text>`;
+  });
+
+  const linePts = series.map((p,i)=>`${x(i).toFixed(1)},${yPrice(p.price).toFixed(1)}`).join(' ');
+  let dots = '';
+  series.forEach((p,i)=>{
+    const dataAttrs = `data-month="${p.month}" data-price="${p.price}" data-change="${changes[i]===null?'':changes[i].toFixed(2)}"`;
+    dots += `<circle class="chart-point" ${dataAttrs} cx="${x(i).toFixed(1)}" cy="${yPrice(p.price).toFixed(1)}" r="5" fill="#E30613" opacity="0.01"/>`;
+    dots += `<circle cx="${x(i).toFixed(1)}" cy="${yPrice(p.price).toFixed(1)}" r="2.8" fill="#E30613" style="pointer-events:none;"/>`;
+  });
+
+  const legend = `<div style="display:flex;gap:16px;margin-bottom:6px;">
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);"><span style="width:10px;height:10px;border-radius:2px;background:#E30613;display:inline-block;"></span>Value/Splint (left)</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);"><span style="width:10px;height:8px;border-radius:2px;background:var(--ink-soft);display:inline-block;"></span>Change % vs previous month (right)</span>
+  </div>`;
+
+  return `${legend}<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="xMidYMid meet" style="touch-action:manipulation;">
+    ${ticksLeft}
+    ${ticksRight}
+    ${bars}
+    <polyline points="${linePts}" fill="none" stroke="#E30613" stroke-width="2"/>
+    ${dots}
+    ${labelsX}
+  </svg>
+  <div id="sec-chart-readout" class="hint mono" style="margin-top:6px;min-height:18px;">Tap a point or bar for details</div>`;
+}
+
+function svgMultiLineChart(series, opts={}){
+  // series: [{name, color, points:[{label, value}]}] — all point arrays must share the same x-axis labels
+  const w = opts.width || 900, h = opts.height || 220;
+  const padL = 54, padR = 16, padT = 16, padB = 28;
+  const innerW = w - padL - padR, innerH = h - padT - padB;
+  const points0 = series[0] ? series[0].points : [];
+  if (!points0.length) return `<div class="empty-state" style="border:none;padding:30px;">Keine Kursdaten vorhanden.</div>`;
+  const n = points0.length;
+  const allValues = series.flatMap(s => s.points.map(p => p.value));
+  let min = Math.min(0, ...allValues), max = Math.max(...allValues);
+  if (min === max) { min -= 1; max += 1; }
+  const range = max - min;
+  const x = i => padL + (n===1 ? innerW/2 : (i/(n-1)) * innerW);
+  const y = v => padT + innerH - ((v - min)/range) * innerH;
+
+  let ticksY = '';
+  const nTicks = 4;
+  for(let i=0;i<=nTicks;i++){
+    const v = min + (range * i/nTicks);
+    const yy = y(v);
+    ticksY += `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${w-padR}" y2="${yy.toFixed(1)}" stroke="#eceef0" stroke-width="1"/>`;
+    ticksY += `<text x="${padL-8}" y="${(yy+3).toFixed(1)}" text-anchor="end" class="chart-tooltip-label">${fmtNum(v,0)}</text>`;
+  }
+  let labelsX = '';
+  const step = Math.max(1, Math.ceil(n/8));
+  points0.forEach((p,i)=>{
+    if (i % step === 0 || i === n-1){
+      labelsX += `<text x="${x(i).toFixed(1)}" y="${h-8}" text-anchor="middle" class="chart-tooltip-label">${p.label}</text>`;
+    }
+  });
+  let linesSvg = '';
+  series.forEach(s => {
+    const linePts = s.points.map((p,i)=>`${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+    let dots = '';
+    s.points.forEach((p,i)=>{
+      dots += `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="2.4" fill="${s.color}"><title>${escapeHtml(s.name)} · ${p.label}: ${fmtNum(p.value)}</title></circle>`;
+    });
+    linesSvg += `<polyline points="${linePts}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}`;
+  });
+  let legend = '';
+  if (series.length > 1){
+    legend = `<div style="display:flex;gap:16px;margin-bottom:6px;">` + series.map(s=>
+      `<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);"><span style="width:10px;height:10px;border-radius:2px;background:${s.color};display:inline-block;"></span>${escapeHtml(s.name)}</span>`
+    ).join('') + `</div>`;
+  }
+  return `${legend}<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="xMidYMid meet">
+    ${ticksY}
+    ${linesSvg}
+    ${labelsX}
+  </svg>`;
+}
+
+// ---------------------------------------------------------------- RENDER: DASHBOARD --
+function renderDashboard(){
+  const hasData = DB.transactions.length || Object.keys(DB.holdings).length;
+  document.getElementById('dashboard-empty').style.display = hasData ? 'none' : '';
+  document.getElementById('dashboard-content').style.display = hasData ? '' : 'none';
+  if (!hasData) return;
+
+  const k = computeKPIs();
+  const portfolioIrr = computePortfolioIRR();
+  const holdingPeriods = allAssetIds().map(id => computeHoldingPeriodYears(id)).filter(v => v !== null);
+  const avgHoldingPeriod = holdingPeriods.length ? holdingPeriods.reduce((s,v)=>s+v,0) / holdingPeriods.length : null;
+  const kpiGrid = document.getElementById('kpi-grid');
+  kpiGrid.innerHTML = `
+    <div class="card kpi">
+      <div class="label">Current Value</div>
+      <div class="value">${fmtMoney(k.currentValue)}</div>
+      <div class="delta">${k.heldCount} assets held · ${fmtNum(k.splintsTotal,0)} splints</div>
+    </div>
+    <div class="card kpi">
+      <div class="label">Invested (Open Positions)</div>
+      <div class="value">${fmtMoney(k.costBasis)}</div>
+      <div class="delta">Weighted avg. cost basis</div>
+    </div>
+    <div class="card kpi">
+      <div class="label">Unrealized Performance</div>
+      <div class="value" style="color:${signColor(k.unrealized)}">${fmtMoney(k.unrealized)}</div>
+      <div class="delta ${k.unrealized>=0?'pos':'neg'}">${fmtPct(k.costBasis? (k.unrealized/k.costBasis*100):0)}</div>
+    </div>
+    <div class="card kpi">
+      <div class="label">Realized Performance</div>
+      <div class="value" style="color:${signColor(k.realized)}">${fmtMoney(k.realized)}</div>
+      <div class="delta">${k.exitedCount} fully exited assets</div>
+    </div>
+    <div class="card kpi">
+      <div class="label">Portfolio IRR p.a.</div>
+      <div class="value" style="color:${signColor(portfolioIrr)}">${portfolioIrr===null?'—':fmtPct(portfolioIrr*100)}</div>
+      <div class="delta">All cash flows; open positions at today's value</div>
+    </div>
+    <div class="card kpi">
+      <div class="label">Average Holding Period</div>
+      <div class="value">${avgHoldingPeriod===null?'—':fmtNum(avgHoldingPeriod,1)+'y'}</div>
+      <div class="delta">Across ${holdingPeriods.length} assets, held &amp; sold</div>
+    </div>
+  `;
+
+  // Portfolio value history: for each month, use the quantity actually held AT THAT MONTH-END
+  // (ledger-derived, historical) × the latest known price up to that month — not today's quantity.
+  // If no price point exists yet for that month (e.g. an asset was just bought and hasn't had its
+  // first valuation upload), fall back to its average cost per splint instead of 0 — otherwise a
+  // freshly-bought asset would create a fake dip in the Value line before its first price arrives.
+  // Second line: cost basis outstanding at that same month-end.
+  const months = allMonthsSorted();
+  const allIds = allAssetIds();
+  const heldIds = allIds.filter(isCurrentlyHeld); // today's holdings, used below for Top Positions
+  const valuePoints = [], costPoints = [];
+  months.forEach(m => {
+    let val = 0, cost = 0;
+    allIds.forEach(id => {
+      const pos = computeOpenPosition(id, m);
+      if (pos.qty <= 0.0001) return;
+      const series = assetPriceSeries(id).filter(p => p.month <= m);
+      const pricePerSplint = series.length ? series[series.length-1].price : (pos.costBasis / pos.qty);
+      val += pricePerSplint * pos.qty;
+      cost += pos.costBasis;
+    });
+    valuePoints.push({label: monthLabel(m), value: val});
+    costPoints.push({label: monthLabel(m), value: cost});
+  });
+  document.getElementById('portfolio-chart-card').innerHTML = svgMultiLineChart([
+    {name: 'Value', color: '#E30613', points: valuePoints},
+    {name: 'Cost', color: '#94a3b8', points: costPoints},
+  ]);
+
+  // by category
+  const catMap = {};
+  allIds.forEach(id => {
+    const pos = computeOpenPosition(id);
+    if (pos.qty <= 0.0001) return;
+    const cat = (DB.master[id] && DB.master[id].category) ? DB.master[id].category : 'Uncategorized';
+    if (!catMap[cat]) catMap[cat] = [];
+    catMap[cat].push(id);
+  });
+  const catRows = Object.keys(catMap).map(cat => {
+    const ids = catMap[cat];
+    let value = 0, cost = 0, splints = 0;
+    ids.forEach(id => {
+      const pos = computeOpenPosition(id);
+      const cp = currentPricePerSplint(id);
+      value += cp.price === null ? 0 : pos.qty * cp.price;
+      cost += pos.costBasis;
+      splints += pos.qty;
+    });
+    const ret = value - cost;
+    const retPct = cost > 0 ? (ret/cost*100) : null;
+    const irr = computePortfolioIRR(ids);
+    return {cat, value, cost, ret, retPct, irr, splints};
+  }).sort((a,b)=>b.value-a.value);
+  document.querySelector('#category-table tbody').innerHTML = catRows.map(r => `
+    <tr class="cat-row" data-category="${escapeHtml(r.cat)}" style="cursor:pointer;" title="Click to open Portfolio filtered by this category">
+      <td>${escapeHtml(r.cat)}</td>
+      <td class="num">${fmtNum(r.splints,0)}</td>
+      <td class="num">${fmtMoney(r.value)}</td>
+      <td class="num">${fmtMoney(r.cost)}</td>
+      <td class="num" style="color:${signColor(r.ret)}">${fmtMoney(r.ret)} (${r.retPct===null?'—':fmtPct(r.retPct)})</td>
+      <td class="num" style="color:${signColor(r.irr)}">${r.irr===null?'—':fmtPct(r.irr*100)}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="6" class="hint">No open positions.</td></tr>`;
+
+  // top positions
+  const rows = heldIds.map(id => {
+    const pos = computeOpenPosition(id);
+    const cp = currentPricePerSplint(id);
+    const value = cp.price === null ? 0 : pos.qty * cp.price;
+    const perf = value - pos.costBasis;
+    const perfPct = pos.costBasis > 0 ? (perf / pos.costBasis * 100) : null;
+    return {
+      id, name: assetName(id),
+      category: DB.master[id] ? [DB.master[id].category, DB.master[id].subCategory].filter(Boolean).join(' / ') : '',
+      splints: pos.qty, value, perf, perfPct,
+    };
+  }).sort((a,b)=>b.value-a.value).slice(0,12);
+  document.querySelector('#top-positions-table tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td>${assetLinkHTML(r.id, r.name)}</td>
+      <td>${escapeHtml(r.category)||'<span class="hint">—</span>'}</td>
+      <td class="num">${fmtNum(r.splints,0)}</td>
+      <td class="num">${fmtMoney(r.value)}</td>
+      <td class="num" style="color:${signColor(r.perf)}">${fmtMoney(r.perf)} (${r.perfPct===null?'—':fmtPct(r.perfPct)})</td>
+    </tr>
+  `).join('') || `<tr><td colspan="5" class="hint">No open positions.</td></tr>`;
+
+  // recent transactions
+  const recentTx = DB.transactions.slice().sort((a,b)=> a.dateISO < b.dateISO ? 1 : -1).slice(0,10);
+  document.querySelector('#recent-tx-table tbody').innerHTML = recentTx.map(t => `
+    <tr>
+      <td class="mono">${t.dateDMY}</td>
+      <td><span class="tag ${/purchase/i.test(t.type)?'buy':'sell'}">${t.type}</span></td>
+      <td>${assetLinkHTML(t.assetId, assetName(t.assetId))}</td>
+      <td class="num">${fmtMoney(t.amount, t.currency)}</td>
+      <td class="num">${fmtMoney(t.pricePerSplint, t.currency)}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="5" class="hint">No transactions yet.</td></tr>`;
+
+  renderCashFlow(months, valuePoints, costPoints);
+}
+
+function renderCashFlow(months, valuePoints, costPoints){
+  const ledger = computeRealizedLedger();
+  const invByMonth = {}, exitByMonth = {}, realizedByMonth = {};
+  DB.transactions.forEach(t => {
+    const mo = t.dateISO.slice(0,7);
+    if (/purchase/i.test(t.type)) invByMonth[mo] = (invByMonth[mo]||0) + (t.amount + t.fees);
+    else exitByMonth[mo] = (exitByMonth[mo]||0) + (t.amount - t.fees);
+  });
+  ledger.forEach(e => {
+    const mo = e.dateISO.slice(0,7);
+    realizedByMonth[mo] = (realizedByMonth[mo]||0) + e.gain;
+  });
+  // Monthly unrealized return: the month-over-month change in total unrealized P&L
+  // (portfolio Value − Cost), i.e. the paper-gain swing caused purely by price moves that month.
+  const unrealizedByMonth = {};
+  months.forEach((m, i) => {
+    const now = valuePoints[i].value - costPoints[i].value;
+    const prev = i>0 ? (valuePoints[i-1].value - costPoints[i-1].value) : 0;
+    unrealizedByMonth[m] = now - prev;
+  });
+  const allMonths = Array.from(new Set([...months, ...Object.keys(invByMonth), ...Object.keys(exitByMonth)])).sort().reverse();
+  document.querySelector('#cashflow-table tbody').innerHTML = allMonths.map(m => {
+    const inv = invByMonth[m] || 0;
+    const ext = exitByMonth[m] || 0;
+    const extVal = -ext;
+    const net = inv + extVal;
+    const unreal = unrealizedByMonth[m];
+    const real = realizedByMonth[m] || 0;
+    return `<tr>
+      <td class="mono">${monthLabel(m)}</td>
+      <td class="num" style="color:${signColor(inv)}">${inv ? fmtMoney(inv) : '—'}</td>
+      <td class="num" style="color:${signColor(extVal)}">${ext ? fmtMoney(extVal) : '—'}</td>
+      <td class="num" style="color:${signColor(net)}">${fmtMoney(net)}</td>
+      <td class="num" style="color:${unreal===undefined?'var(--ink-soft)':signColor(unreal)}">${unreal===undefined?'—':fmtMoney(unreal)}</td>
+      <td class="num" style="color:${signColor(real)}">${real ? fmtMoney(real) : '—'}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" class="hint">No cash flow data yet.</td></tr>`;
+}
+
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------------------------------------------------------------- RENDER: TRANSACTIONS --
+function renderTransactions(){
+  const search = document.getElementById('tx-search').value.trim().toLowerCase();
+  const typeFilter = document.getElementById('tx-type-filter').value;
+  let rows = DB.transactions.map(t => {
+    const priceChf = (t.fxRate !== '' && t.fxRate !== undefined && t.fxRate !== null && !isNaN(t.fxRate)) ? Number(t.fxRate) : null;
+    const valueChf = priceChf === null ? null : t.amount * priceChf;
+    return {...t, assetName: assetName(t.assetId), priceChf, valueChf};
+  });
+  if (typeFilter) rows = rows.filter(r => r.type === typeFilter);
+  if (search) rows = rows.filter(r =>
+    r.assetName.toLowerCase().includes(search) ||
+    r.type.toLowerCase().includes(search) ||
+    r.id.toLowerCase().includes(search) ||
+    (r.confirmation||'').toLowerCase().includes(search)
+  );
+  rows.sort((a,b) => {
+    let av = a[txSort.key], bv = b[txSort.key];
+    if (av === null || av === undefined || av === '') av = -Infinity;
+    if (bv === null || bv === undefined || bv === '') bv = -Infinity;
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (av < bv) return -1*txSort.dir;
+    if (av > bv) return 1*txSort.dir;
+    return 0;
+  });
+  document.getElementById('tx-count-hint').textContent = `${rows.length} of ${DB.transactions.length} transactions`;
+  document.querySelector('#tx-table tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="mono">${r.dateDMY}</td>
+      <td><span class="tag ${/purchase/i.test(r.type)?'buy':'sell'}">${r.type}</span></td>
+      <td>${assetLinkHTML(r.assetId, r.assetName)}</td>
+      <td class="num">${fmtNum(r.splints,2)}</td>
+      <td class="num">${fmtMoney(r.amount, r.currency)}</td>
+      <td class="num">${fmtMoney(r.pricePerSplint, r.currency)}</td>
+      <td class="num"><input type="number" step="0.01" class="day1profit-input" data-tx-id="${escapeHtml(r.id)}" value="${(r.day1Profit===''||r.day1Profit===undefined||r.day1Profit===null)?'':r.day1Profit}" placeholder="—" style="width:80px;text-align:right;"> ${escapeHtml(r.currency)}</td>
+      <td class="num">${fmtMoney(r.fees, r.currency)}</td>
+      <td class="num"><input type="number" step="0.0001" class="fxrate-input" data-tx-id="${escapeHtml(r.id)}" value="${r.priceChf===null?'':r.priceChf}" placeholder="—" style="width:80px;text-align:right;"></td>
+      <td class="num" data-value-chf-for="${escapeHtml(r.id)}">${r.valueChf===null?'':fmtMoney(r.valueChf,'CHF')}</td>
+      <td class="mono">${r.id}</td>
+      <td>${r.confirmation ? `<span class="hint mono" title="${escapeHtml(r.confirmation)}">Receipt</span>` : ''}</td>
+      <td>${/purchase/i.test(r.type) ? `<button class="buchung-btn" data-tx-id="${escapeHtml(r.id)}" title="Kaufbeleg"><svg viewBox="0 0 24 24" fill="none"><path d="M4 3h11l5 5v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="#1D6F42"/><path d="M15 3v4a1 1 0 0 0 1 1h4" fill="#20744A"/><path d="M7.5 10.5l3 6M10.5 10.5l-3 6" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg></button>` : ''}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="13" class="hint">No transactions found.</td></tr>`;
+
+  // header sort arrows
+  document.querySelectorAll('#tx-table thead th').forEach(th => {
+    th.querySelectorAll('.arrow').forEach(a=>a.remove());
+    if (th.dataset.key === txSort.key){
+      const span = document.createElement('span');
+      span.className = 'arrow';
+      span.textContent = txSort.dir === 1 ? '↑' : '↓';
+      th.appendChild(span);
+    }
+  });
+}
+
+// ---------------------------------------------------------------- RENDER: SECURITIES --
+function populateSecuritySelect(){
+  const sel = document.getElementById('sec-select');
+  const search = document.getElementById('sec-search').value.trim().toLowerCase();
+  const current = sel.value;
+  const ids = allAssetIds()
+    .map(id => ({id, name: assetName(id), held: isCurrentlyHeld(id)}))
+    .filter(a => !search || a.name.toLowerCase().includes(search))
+    .sort((a,b) => a.name.localeCompare(b.name));
+  sel.innerHTML = `<option value="">— choose asset —</option>` + ids.map(a =>
+    `<option value="${a.id}" ${a.id===current?'selected':''}>${escapeHtml(a.name)}${a.held?'':' (no longer held)'}</option>`
+  ).join('');
+}
+
+function renderSecurityDetail(assetId){
+  const empty = document.getElementById('sec-empty');
+  const detail = document.getElementById('sec-detail');
+  if (!assetId){ empty.style.display=''; detail.style.display='none'; return; }
+  empty.style.display='none'; detail.style.display='';
+
+  const m = DB.master[assetId] || {assetName:assetId, category:'', subCategory:'', categoryOld:'', notes:''};
+  const h = DB.holdings[assetId]; // may be absent this session; used only for release date/horizon metadata below
+  const pos = computeOpenPosition(assetId);
+  const cp = currentPricePerSplint(assetId);
+  const hasRealName = m.assetName && m.assetName !== assetId;
+  document.getElementById('sec-name').textContent = hasRealName ? m.assetName : 'Unnamed';
+  const releaseDate = (h && h.releaseDate) || m.releaseDate || '';
+  const minHorizon = (h && h.minHorizon) || m.minHorizon || '';
+  const maxHorizon = (h && h.maxHorizon) || m.maxHorizon || '';
+  document.getElementById('sec-meta').textContent = `Asset ID: ${assetId}` + (releaseDate ? ` · Release: ${isoToDMY(releaseDate)}` : '') + ((minHorizon&&maxHorizon) ? ` · Horizon ${minHorizon}-${maxHorizon} years` : '');
+  document.getElementById('sec-owned').textContent = fmtNum(pos.qty,0);
+  document.getElementById('sec-value').textContent = pos.qty>0.0001 ? (cp.price===null ? '—' : fmtMoney(pos.qty*cp.price, cp.currency)) : fmtMoney(0);
+  document.getElementById('sec-cost').textContent = fmtMoney(pos.costBasis);
+
+  const perf = computeSecurityPerformance(assetId);
+  const absEl = document.getElementById('sec-return-abs');
+  absEl.textContent = fmtMoney(perf.absolute);
+  absEl.style.color = signColor(perf.absolute);
+  const relEl = document.getElementById('sec-return-rel');
+  relEl.textContent = perf.relativePct === null ? '—' : fmtPct(perf.relativePct);
+  relEl.style.color = signColor(perf.relativePct);
+  const irrEl = document.getElementById('sec-irr');
+  irrEl.textContent = perf.irr === null ? '—' : fmtPct(perf.irr*100);
+  irrEl.style.color = signColor(perf.irr);
+  document.getElementById('sec-eroi').value = (m.eROI===''||m.eROI===undefined||m.eROI===null||isNaN(m.eROI)) ? '' : Number(m.eROI).toFixed(1);
+  const eroiDiff = computeEroiVsIrr(assetId, perf.irr);
+  const eroiDiffEl = document.getElementById('sec-eroi-diff');
+  eroiDiffEl.textContent = eroiDiff === null ? 'n/a' : fmtPct(eroiDiff,1);
+  eroiDiffEl.style.color = eroiDiff === null ? 'var(--ink-soft)' : signColor(eroiDiff);
+  const holdingPeriod = computeHoldingPeriodYears(assetId);
+  document.getElementById('sec-holding-period').textContent = holdingPeriod===null ? '—' : fmtNum(holdingPeriod,1)+'y';
+
+  document.getElementById('sec-name-input').value = hasRealName ? m.assetName : '';
+  document.getElementById('sec-category').value = m.category || '';
+  document.getElementById('sec-subcategory').value = m.subCategory || '';
+  document.getElementById('sec-category-old').value = m.categoryOld || '';
+  document.getElementById('sec-notes').value = m.notes || '';
+  document.getElementById('sec-save-status').textContent = '';
+
+  // datalists for categories
+  const cats = new Set(), subcats = new Set(), catsOld = new Set();
+  Object.values(DB.master).forEach(mm => { if(mm.category) cats.add(mm.category); if(mm.subCategory) subcats.add(mm.subCategory); if(mm.categoryOld) catsOld.add(mm.categoryOld); });
+  document.getElementById('category-list').innerHTML = Array.from(cats).sort((a,b)=>a.localeCompare(b)).map(c=>`<option value="${escapeHtml(c)}">`).join('');
+  document.getElementById('subcategory-list').innerHTML = Array.from(subcats).sort((a,b)=>a.localeCompare(b)).map(c=>`<option value="${escapeHtml(c)}">`).join('');
+  document.getElementById('category-old-list').innerHTML = Array.from(catsOld).sort((a,b)=>a.localeCompare(b)).map(c=>`<option value="${escapeHtml(c)}">`).join('');
+
+  // price chart
+  const series = assetPriceSeries(assetId);
+  document.getElementById('sec-chart-card').innerHTML = svgPriceChangeChart(series);
+
+  // Zeitablauf: release, buy(s), sale(s), today, and the expected exit window
+  document.getElementById('sec-timeline-card').innerHTML = svgAssetTimeline(assetId, releaseDate, minHorizon, maxHorizon);
+
+  // transactions for this asset
+  const txs = DB.transactions.filter(t=>t.assetId===assetId).sort((a,b)=> a.dateISO < b.dateISO ? 1 : -1);
+  document.querySelector('#sec-tx-table tbody').innerHTML = txs.map(t => {
+    const priceChf = (t.fxRate !== '' && t.fxRate !== undefined && t.fxRate !== null && !isNaN(t.fxRate)) ? Number(t.fxRate) : null;
+    const valueChf = priceChf === null ? null : t.amount * priceChf;
+    return `
+    <tr>
+      <td class="mono">${t.dateDMY}</td>
+      <td><span class="tag ${/purchase/i.test(t.type)?'buy':'sell'}">${t.type}</span></td>
+      <td class="num">${fmtNum(t.splints,0)}</td>
+      <td class="num">${fmtMoney(t.amount, t.currency)}</td>
+      <td class="num">${fmtMoney(t.pricePerSplint, t.currency)}</td>
+      <td class="num"><input type="number" step="0.01" class="day1profit-input" data-tx-id="${escapeHtml(t.id)}" value="${(t.day1Profit===''||t.day1Profit===undefined||t.day1Profit===null)?'':t.day1Profit}" placeholder="—" style="width:80px;text-align:right;"> ${escapeHtml(t.currency)}</td>
+      <td class="num">${fmtMoney(t.fees, t.currency)}</td>
+      <td class="num"><input type="number" step="0.0001" class="fxrate-input" data-tx-id="${escapeHtml(t.id)}" value="${priceChf===null?'':priceChf}" placeholder="—" style="width:80px;text-align:right;"></td>
+      <td class="num" data-value-chf-for="${escapeHtml(t.id)}">${valueChf===null?'':fmtMoney(valueChf,'CHF')}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="9" class="hint">No transactions.</td></tr>`;
+
+  // similar investments: same category & subcategory, excluding this asset itself
+  const myCat = m.category || '';
+  const mySub = m.subCategory || '';
+  let simIds = allAssetIds().filter(otherId => otherId !== assetId);
+  if (myCat || mySub){
+    simIds = simIds.filter(otherId => {
+      const om = DB.master[otherId];
+      return om && (om.category||'') === myCat && (om.subCategory||'') === mySub;
+    });
+  } else {
+    simIds = []; // no category/subcategory set on this asset -> nothing meaningful to compare
+  }
+  const simRows = simIds.map(computePortfolioRow).sort((a,b)=>b.value-a.value);
+  document.getElementById('sec-similar-hint').textContent = (myCat||mySub) ? `Same category & subcategory: ${[myCat,mySub].filter(Boolean).join(' / ')}` : 'No category/subcategory set';
+  document.querySelector('#sec-similar-table tbody').innerHTML = simRows.map(r => `
+    <tr>
+      <td>${assetLinkHTML(r.id, r.name)}${r.held?'':' <span class="hint">(sold)</span>'}</td>
+      <td class="num">${fmtNum(r.splints,0)}</td>
+      <td class="num">${fmtMoney(r.value)}</td>
+      <td class="num">${fmtMoney(r.cost)}</td>
+      <td class="num" style="color:${signColor(r.returnAbs)}">${fmtMoney(r.returnAbs)}</td>
+      <td class="num" style="color:${signColor(r.returnRel)}">${r.returnRel===null?'—':fmtPct(r.returnRel)}</td>
+      <td class="num" style="color:${signColor(r.irr)}">${r.irr===null?'—':fmtPct(r.irr*100)}</td>
+      <td class="mono">${r.firstBuy?isoToDMY(r.firstBuy):'—'}</td>
+      <td class="mono">${r.exitDate?isoToDMY(r.exitDate):'—'}</td>
+      <td class="num">${!r.held?'n/a':(r.targetExitYear===null?'—':r.targetExitYear)}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="10" class="hint">No similar investments found.</td></tr>`;
+}
+
+// ---------------------------------------------------------------- RENDER: PERFORMANCE --
+let perfMode = 'price';
+let perfSort = {key:'name', dir:1};
+function renderPerformance(){
+  const search = document.getElementById('perf-search').value.trim().toLowerCase();
+  const monthsAsc = allMonthsSorted();
+  const monthsDesc = monthsAsc.slice().reverse();
+  const thead = document.querySelector('#perf-table thead tr');
+  thead.innerHTML = `<th data-key="name">Asset</th><th data-key="category">Category</th>` +
+    monthsDesc.map(m=>`<th class="num" data-key="${m}">${monthLabel(m)}</th>`).join('');
+  thead.querySelectorAll('th[data-key]').forEach(th => {
+    if (th.dataset.key === perfSort.key){
+      const span = document.createElement('span');
+      span.className = 'arrow';
+      span.textContent = perfSort.dir === 1 ? '↑' : '↓';
+      th.appendChild(span);
+    }
+  });
+
+  let ids = allAssetIds().filter(id => DB.prices.some(p=>p.assetId===id));
+  if (search) ids = ids.filter(id => assetName(id).toLowerCase().includes(search));
+
+  // build each row's data once so both sorting and rendering can use it — including a delta
+  // (% change vs previous month) series, since sorting by a month column must reflect whichever
+  // mode (price or Δ%) is currently displayed.
+  let rows = ids.map(id => {
+    const series = {};
+    assetPriceSeries(id).forEach(p => series[p.month] = p.price);
+    const deltaSeries = {};
+    let lastVal = null;
+    monthsAsc.forEach(m => {
+      const v = series[m];
+      if (v !== undefined){
+        if (lastVal !== null && lastVal !== 0) deltaSeries[m] = ((v-lastVal)/lastVal)*100;
+        lastVal = v;
+      }
+    });
+    return {id, name: assetName(id), category: (DB.master[id] && DB.master[id].category) || '', series, deltaSeries};
+  });
+
+  rows.sort((a,b) => {
+    let av, bv;
+    if (perfSort.key === 'name'){ av = a.name.toLowerCase(); bv = b.name.toLowerCase(); }
+    else if (perfSort.key === 'category'){ av = a.category.toLowerCase(); bv = b.category.toLowerCase(); }
+    else if (perfMode === 'change'){ av = a.deltaSeries[perfSort.key]; bv = b.deltaSeries[perfSort.key]; }
+    else { av = a.series[perfSort.key]; bv = b.series[perfSort.key]; }
+    const aNull = (av === undefined || av === null || av === '');
+    const bNull = (bv === undefined || bv === null || bv === '');
+    if (aNull && bNull) return 0;
+    if (aNull) return 1;
+    if (bNull) return -1;
+    if (av < bv) return -1*perfSort.dir;
+    if (av > bv) return 1*perfSort.dir;
+    return 0;
+  });
+
+  const bodyRows = rows.map(row => {
+    const series = row.series;
+    // Δ% needs the chronologically preceding month's value, so compute cell contents walking
+    // months oldest-to-newest first, then render the resulting cells newest-to-oldest (left to right).
+    let lastVal = null;
+    const cellsByMonth = {};
+    const rowVals = monthsAsc.map(m=>series[m]).filter(v=>v!==undefined);
+    const rowMin = rowVals.length ? Math.min(...rowVals) : null;
+    const rowMax = rowVals.length ? Math.max(...rowVals) : null;
+    monthsAsc.forEach(m => {
+      const v = series[m];
+      if (v === undefined){ cellsByMonth[m] = `<td class="num hint">—</td>`; return; }
+      let display, bg = '';
+      if (perfMode === 'price'){
+        display = fmtNum(v);
+        if (rowMin !== null && rowMax !== null){
+          const t = rowMax === rowMin ? 0.5 : (v - rowMin) / (rowMax - rowMin);
+          bg = ` style="background:${heatColor(t)}"`;
+        }
+      } else {
+        if (lastVal === null || lastVal === 0){ display = '—'; }
+        else {
+          const chg = ((v-lastVal)/lastVal)*100;
+          display = `<span style="color:${signColor(chg)}">${fmtPct(chg,1)}</span>`;
+        }
+      }
+      lastVal = v;
+      cellsByMonth[m] = `<td class="num"${bg}>${display}</td>`;
+    });
+    const cells = monthsDesc.map(m => cellsByMonth[m]).join('');
+    return `<tr><td>${assetLinkHTML(row.id, row.name)}${isCurrentlyHeld(row.id)?'':' <span class="hint">(sold)</span>'}</td><td>${escapeHtml(row.category)||'<span class="hint">—</span>'}</td>${cells}</tr>`;
+  });
+  document.querySelector('#perf-table tbody').innerHTML = bodyRows.join('') || `<tr><td class="hint">No price data available.</td></tr>`;
+}
+
+// ---------------------------------------------------------------- RENDER: PRICES --
+let pricesSort = {key:'assetName', dir:1};
+// Adds or updates a single price point. Always upserts by asset+month, so there is never
+// more than one price for the same asset in the same month (see normalizePrices() too).
+function upsertPrice(assetId, month, price, currency, dateDMY){
+  const existing = DB.prices.find(p => p.assetId === assetId && p.month === month);
+  if (existing){ existing.price = price; existing.currency = currency; if (dateDMY) existing.dateDMY = dateDMY; }
+  else DB.prices.push({assetId, month, price, currency, dateDMY: dateDMY || isoToDMY(month+'-01')});
+}
+function renderPrices(){
+  const search = document.getElementById('prices-search').value.trim().toLowerCase();
+  let rows = DB.prices.map(p => ({...p, assetNameStr: assetName(p.assetId)}));
+  if (search) rows = rows.filter(r => r.assetNameStr.toLowerCase().includes(search));
+  rows.sort((a,b) => {
+    let av = pricesSort.key === 'assetName' ? a.assetNameStr : a[pricesSort.key];
+    let bv = pricesSort.key === 'assetName' ? b.assetNameStr : b[pricesSort.key];
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (av < bv) return -1*pricesSort.dir;
+    if (av > bv) return 1*pricesSort.dir;
+    return 0;
+  });
+  document.getElementById('prices-count-hint') && (document.getElementById('prices-count-hint').textContent = `${rows.length} price points`);
+  document.querySelector('#prices-table tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td>${assetLinkHTML(r.assetId, r.assetNameStr)}</td>
+      <td class="mono">${monthLabel(r.month)}</td>
+      <td class="num"><input type="number" step="0.01" class="price-edit-input" data-asset-id="${escapeHtml(r.assetId)}" data-month="${escapeHtml(r.month)}" value="${r.price}" style="width:90px;text-align:right;"></td>
+      <td class="mono">${escapeHtml(r.currency)}</td>
+      <td class="mono">${escapeHtml(r.dateDMY||'')}</td>
+      <td><button class="btn ghost price-delete-btn" data-asset-id="${escapeHtml(r.assetId)}" data-month="${escapeHtml(r.month)}" style="padding:3px 9px;font-size:11px;">Delete</button></td>
+    </tr>
+  `).join('') || `<tr><td colspan="6" class="hint">No prices found.</td></tr>`;
+
+  document.querySelectorAll('#prices-table thead th[data-key]').forEach(th => {
+    th.querySelectorAll('.arrow').forEach(a=>a.remove());
+    if (th.dataset.key === pricesSort.key){
+      const span = document.createElement('span');
+      span.className = 'arrow';
+      span.textContent = pricesSort.dir === 1 ? '↑' : '↓';
+      th.appendChild(span);
+    }
+  });
+
+  // keep the "add/update" asset dropdown in sync with currently known assets
+  const addSel = document.getElementById('price-add-asset');
+  const prevVal = addSel.value;
+  const ids = allAssetIds().sort((a,b)=>assetName(a).localeCompare(assetName(b)));
+  addSel.innerHTML = `<option value="">— choose asset —</option>` + ids.map(id=>`<option value="${escapeHtml(id)}">${escapeHtml(assetName(id))}</option>`).join('');
+  addSel.value = ids.includes(prevVal) ? prevVal : '';
+}
+
+// ---------------------------------------------------------------- HEADER --
+function updateHeaderStatus(){
+  const el = document.getElementById('header-status');
+  const heldCount = allAssetIds().filter(isCurrentlyHeld).length;
+  if (!DB.transactions.length && !heldCount){ el.textContent = 'No data loaded'; return; }
+  el.textContent = `${DB.transactions.length} transactions · ${heldCount} open positions · ${DB.prices.length} price points`;
+}
+
+// ---------------------------------------------------------------- RENDER: PORTFOLIO --
+let portfolioSort = {key:'value', dir:-1};
+let portfolioFilter = 'all';
+let portfolioCategoryFilter = '';
+
+function computePortfolioRow(id){
+  const pos = computeOpenPosition(id);
+  const held = pos.qty > 0.0001;
+  const cp = currentPricePerSplint(id);
+  const value = held && cp.price !== null ? pos.qty * cp.price : 0;
+  const perf = computeSecurityPerformance(id);
+  const m = DB.master[id];
+  return {
+    id,
+    name: assetName(id),
+    held,
+    splints: held ? pos.qty : 0,
+    value,
+    cost: perf.invested,
+    returnAbs: perf.absolute,
+    returnRel: perf.relativePct,
+    irr: perf.irr,
+    eroi: m ? m.eROI : '',
+    eroiVsIrr: computeEroiVsIrr(id, perf.irr),
+    firstBuy: assetFirstBuyDate(id),
+    exitDate: held ? null : assetLastExitDate(id),
+    holdingPeriod: computeHoldingPeriodYears(id),
+    targetExitYear: computeTargetExitYear(id),
+    category: m ? m.category : '',
+    subCategory: m ? m.subCategory : '',
+  };
+}
+function renderPortfolio(){
+  const search = document.getElementById('portfolio-search').value.trim().toLowerCase();
+  let ids = allAssetIds();
+
+  let rows = ids.map(computePortfolioRow);
+
+  // keep the category dropdown's options in sync with whatever categories currently exist
+  const catSelect = document.getElementById('portfolio-category-filter');
+  const allCats = Array.from(new Set(rows.map(r=>r.category).filter(Boolean))).sort();
+  const prevSelection = catSelect.value;
+  catSelect.innerHTML = `<option value="">All categories</option>` + allCats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  catSelect.value = allCats.includes(portfolioCategoryFilter) ? portfolioCategoryFilter : (allCats.includes(prevSelection) ? prevSelection : '');
+  portfolioCategoryFilter = catSelect.value;
+
+  if (portfolioFilter === 'held') rows = rows.filter(r => r.held);
+  else if (portfolioFilter === 'sold') rows = rows.filter(r => !r.held);
+
+  if (portfolioCategoryFilter) rows = rows.filter(r => r.category === portfolioCategoryFilter);
+
+  if (search) rows = rows.filter(r =>
+    r.name.toLowerCase().includes(search) ||
+    r.category.toLowerCase().includes(search) ||
+    r.subCategory.toLowerCase().includes(search)
+  );
+
+  rows.sort((a,b) => {
+    let av = a[portfolioSort.key], bv = b[portfolioSort.key];
+    const aNull = (av === null || av === undefined || av === '');
+    const bNull = (bv === null || bv === undefined || bv === '');
+    if (aNull && bNull) return 0;
+    if (aNull) return 1;  // nulls always sort last regardless of direction
+    if (bNull) return -1;
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (av < bv) return -1*portfolioSort.dir;
+    if (av > bv) return 1*portfolioSort.dir;
+    return 0;
+  });
+
+  document.getElementById('portfolio-count-hint').textContent = `${rows.length} of ${ids.length} assets (incl. fully sold)`;
+
+  document.querySelector('#portfolio-table tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td>${assetLinkHTML(r.id, r.name)}${r.held?'':' <span class="hint">(sold)</span>'}</td>
+      <td class="num">${fmtNum(r.splints,0)}</td>
+      <td class="num">${fmtMoney(r.value)}</td>
+      <td class="num">${fmtMoney(r.cost)}</td>
+      <td class="num" style="color:${signColor(r.returnAbs)}">${fmtMoney(r.returnAbs)}</td>
+      <td class="num" style="color:${signColor(r.returnRel)}">${r.returnRel===null?'—':fmtPct(r.returnRel)}</td>
+      <td class="num" style="color:${signColor(r.irr)}">${r.irr===null?'—':fmtPct(r.irr*100)}</td>
+      <td class="num"><input type="number" step="0.1" class="eroi-input" data-asset-id="${escapeHtml(r.id)}" value="${(r.eroi===''||r.eroi===undefined||r.eroi===null||isNaN(r.eroi))?'':Number(r.eroi).toFixed(1)}" placeholder="—" style="width:64px;text-align:right;"> %</td>
+      <td class="num" data-eroi-diff-for="${escapeHtml(r.id)}" style="color:${r.eroiVsIrr===null?'var(--ink-soft)':signColor(r.eroiVsIrr)}">${r.eroiVsIrr===null?'n/a':fmtPct(r.eroiVsIrr,1)}</td>
+      <td class="mono">${r.firstBuy?isoToDMY(r.firstBuy):'—'}</td>
+      <td class="mono">${r.exitDate?isoToDMY(r.exitDate):'—'}</td>
+      <td class="num">${r.holdingPeriod===null?'—':fmtNum(r.holdingPeriod,1)+'y'}</td>
+      <td class="num">${!r.held?'n/a':(r.targetExitYear===null?'—':r.targetExitYear)}</td>
+      <td>${escapeHtml(r.category)||'<span class="hint">—</span>'}</td>
+      <td>${escapeHtml(r.subCategory)||'<span class="hint">—</span>'}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="15" class="hint">No assets found.</td></tr>`;
+
+  // Total / Subtotal row — reflects whatever is currently filtered/searched
+  const isFiltered = portfolioFilter !== 'all' || !!portfolioCategoryFilter || !!search;
+  const totalSplints = rows.reduce((s,r)=>s+r.splints, 0);
+  const totalValue = rows.reduce((s,r)=>s+r.value, 0);
+  const totalCost = rows.reduce((s,r)=>s+r.cost, 0);
+  const totalReturnAbs = rows.reduce((s,r)=>s+r.returnAbs, 0);
+  const totalReturnRel = totalCost > 0 ? (totalReturnAbs/totalCost*100) : null;
+  const totalIrr = computePortfolioIRR(rows.map(r=>r.id));
+  document.getElementById('portfolio-total-row').innerHTML = `
+    <td>${isFiltered ? `Subtotal (${rows.length})` : 'Total'}</td>
+    <td class="num">${fmtNum(totalSplints,0)}</td>
+    <td class="num">${fmtMoney(totalValue)}</td>
+    <td class="num">${fmtMoney(totalCost)}</td>
+    <td class="num" style="color:${signColor(totalReturnAbs)}">${fmtMoney(totalReturnAbs)}</td>
+    <td class="num" style="color:${signColor(totalReturnRel)}">${totalReturnRel===null?'—':fmtPct(totalReturnRel)}</td>
+    <td class="num" style="color:${signColor(totalIrr)}">${totalIrr===null?'—':fmtPct(totalIrr*100)}</td>
+    <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+  `;
+
+  document.querySelectorAll('#portfolio-table thead th').forEach(th => {
+    th.querySelectorAll('.arrow').forEach(a=>a.remove());
+    if (th.dataset.key === portfolioSort.key){
+      const span = document.createElement('span');
+      span.className = 'arrow';
+      span.textContent = portfolioSort.dir === 1 ? '↑' : '↓';
+      th.appendChild(span);
+    }
+  });
+}
+
+// ---------------------------------------------------------------- MASTER RENDER --
+function renderAll(){
+  normalizePrices();
+  if (backfillFxRates()) autoSyncToNeon('FX rates auto-filled from accountingdatacollector');
+  updateHeaderStatus();
+  renderDashboard();
+  renderPortfolio();
+  renderTransactions();
+  populateSecuritySelect();
+  renderSecurityDetail(document.getElementById('sec-select').value);
+  renderPerformance();
+  renderPrices();
+}
+
+// ---------------------------------------------------------------- EVENTS --
+document.querySelectorAll('nav.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById('view-'+btn.dataset.view).classList.add('active');
+  });
+});
+
+document.getElementById('tx-search').addEventListener('input', renderTransactions);
+document.getElementById('tx-type-filter').addEventListener('change', renderTransactions);
+async function handleDay1ProfitInputChange(e){
+  const input = e.target.closest('.day1profit-input');
+  if (!input) return;
+  const tx = DB.transactions.find(t => t.id === input.dataset.txId);
+  if (!tx) return;
+  const raw = input.value.trim();
+  tx.day1Profit = raw === '' ? '' : parseFloat(raw);
+  await autoSyncToNeon('Day1Profit edited');
+}
+document.querySelector('#tx-table tbody').addEventListener('change', handleDay1ProfitInputChange);
+document.querySelector('#sec-tx-table tbody').addEventListener('change', handleDay1ProfitInputChange);
+
+async function handleFxRateInputChange(e){
+  const input = e.target.closest('.fxrate-input');
+  if (!input) return;
+  const tx = DB.transactions.find(t => t.id === input.dataset.txId);
+  if (!tx) return;
+  const raw = input.value.trim();
+  tx.fxRate = raw === '' ? '' : parseFloat(raw);
+  const valueChf = (tx.fxRate === '' || isNaN(tx.fxRate)) ? null : tx.amount * Number(tx.fxRate);
+  document.querySelectorAll(`[data-value-chf-for="${tx.id}"]`).forEach(cell => {
+    cell.textContent = valueChf === null ? '' : fmtMoney(valueChf, 'CHF');
+  });
+  await autoSyncToNeon('FX Rate edited');
+}
+document.querySelector('#tx-table tbody').addEventListener('change', handleFxRateInputChange);
+document.querySelector('#sec-tx-table tbody').addEventListener('change', handleFxRateInputChange);
+
+// ---------------------------------------------------------------- BUCHUNGSBELEG (XLSX) EXPORT --
+// Builds a "splint_entries.xlsx" with the two booking-entry tabs (accounting + security ledger)
+// for a single purchase transaction, matching the fixed layout/column order used by the
+// Munotstadt accounting import. Only offered for purchase transactions (Primary/Marketplace
+// purchase) — sales aren't booked through this template.
+const SPLINT_ENTRIES_SUGGESTED_DIR_HINT = 'C:\\Users\\phili\\OneDrive\\1_Finance\\Data Management';
+
+function buildSplintEntriesWorkbook(t){
+  const master = DB.master[t.assetId] || {};
+  const category = master.category || '';
+  const aName = assetName(t.assetId);
+  const comment = `${category}: ${aName}`;
+  const partyNo = 21000; // fixed constant
+  const entryNo = 8352; // fixed constant, same in both tabs — do not derive from transaction ID
+  const currency = t.currency || 'EUR';
+  const amtLC = Math.round(t.amount * 100) / 100;
+  const quantity = (t.splints !== undefined && t.splints !== null) ? t.splints
+    : (t.pricePerSplint ? Math.round((t.amount / t.pricePerSplint) * 100) / 100 : 1);
+
+  let fxRate = (t.fxRate !== '' && t.fxRate !== undefined && t.fxRate !== null && !isNaN(t.fxRate))
+    ? Number(t.fxRate) : chfRateForCurrencyAtDate(currency, t.dateISO);
+  if (fxRate === null){
+    throw new Error(`Kein FX-Kurs für ${currency} am ${t.dateDMY} verfügbar. Bitte zuerst im Feld "FX Rate" der Transaktion einen Kurs erfassen.`);
+  }
+  const valueChf = Math.round(amtLC * fxRate * 100) / 100;
+  const dateVal = new Date(t.dateISO + 'T00:00:00');
+
+  const accountingHeader = ['TrxNo','MainID','EntryNo','Comment','TrxArt','PartyNo','Location','Shop','ProjectID','AmtCHF','Cry','AmtLC','Valuta','DateClearance','EntrySource','DateAdd','DateModified'];
+  const accountingRows = [
+    ['NULL', 1060, entryNo, comment, 13946, partyNo, null, null, 10, -valueChf, currency, -amtLC, dateVal, 'NULL', 'SplintManager', 'NULL', 'NULL'],
+    ['NULL', 1816, entryNo, comment, 13946, partyNo, null, null, 10,  valueChf, currency,  amtLC, dateVal, 'NULL', 'SplintManager', 'NULL', 'NULL'],
+  ];
+  const wsAccounting = XLSX.utils.aoa_to_sheet([accountingHeader, ...accountingRows]);
+  ['L2','L3'].forEach(ref => { wsAccounting[ref].z = '_ * #,##0.00_ ;_ * \\-#,##0.00_ ;_ * "-"??_ ;_ @_ '; });
+  ['M2','M3'].forEach(ref => { wsAccounting[ref].z = 'mm-dd-yy'; });
+
+  const securityHeader = ['MainID','CustodyID','ProjectID','TrxTypeID','Date','Valuta','Quantity','Cry','AmtCHF','AmtLC','ExpCHF','ExpLC','Price_CHF','Price_Cry','Price_LC','Comments','EntryNo','CheckpointStatus','CheckpointStatusComment','CheckpointID','Source','DateModified'];
+  const securityRow = [21000, 1816, 10, 222, dateVal, dateVal, quantity, currency, valueChf, amtLC, 0, 0, 'NULL', 'NULL', 'NULL', comment, entryNo, 'Pending', 'NULL', 'NULL', 'SplintManager', 'NULL'];
+  const wsSecurity = XLSX.utils.aoa_to_sheet([securityHeader, securityRow]);
+  ['E2','F2'].forEach(ref => { wsSecurity[ref].z = 'mm-dd-yy'; });
+  wsSecurity['G2'].z = '#,##0.00';
+  wsSecurity['J2'].z = '_ * #,##0.00_ ;_ * \\-#,##0.00_ ;_ * "-"??_ ;_ @_ ';
+  ['K2','L2'].forEach(ref => { wsSecurity[ref].z = '#,##0.00'; });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsAccounting, 'splint_accounting_entry');
+  XLSX.utils.book_append_sheet(wb, wsSecurity, 'splint_security_entry');
+  return wb;
+}
+
+async function exportSplintEntries(t){
+  let wb;
+  try{
+    wb = buildSplintEntriesWorkbook(t);
+  } catch(err){
+    alert(err.message);
+    return;
+  }
+  const wbBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+  // File System Access API (Chromium): lets us suggest the exact filename. The browser (not the
+  // page, for security reasons) remembers the last folder used for this site — there's no way
+  // for a webpage to force-open a specific OS folder, so the very first export needs one manual
+  // navigation to the target folder; every export after that reopens there by default.
+  if (window.showSaveFilePicker){
+    try{
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'splint_entries.xlsx',
+        types: [{ description: 'Excel Workbook', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      log(`Buchungsbeleg exportiert: splint_entries.xlsx (Transaktion ${t.id}). Tipp: falls dies der erste Export ist, im Dialog einmalig zu "${SPLINT_ENTRIES_SUGGESTED_DIR_HINT}" navigieren — der Browser merkt sich diesen Ordner für künftige Exporte.`);
+      return;
+    } catch(err){
+      if (err && err.name === 'AbortError') return; // user cancelled the save dialog
+      // fall through to plain download on any other error (e.g. API not actually available)
+    }
+  }
+  // Fallback for browsers without the File System Access API (Firefox, Safari): a plain
+  // download to the browser's default downloads folder — the OS folder can't be preselected here.
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'splint_entries.xlsx';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  log(`Buchungsbeleg heruntergeladen: splint_entries.xlsx (Transaktion ${t.id}). Dieser Browser unterstützt keine Ordnerauswahl beim Speichern — Datei liegt im Standard-Download-Ordner, bitte manuell nach "${SPLINT_ENTRIES_SUGGESTED_DIR_HINT}" verschieben.`);
+}
+
+document.querySelector('#tx-table tbody').addEventListener('click', (e) => {
+  const btn = e.target.closest('.buchung-btn');
+  if (!btn) return;
+  const tx = DB.transactions.find(t => t.id === btn.dataset.txId);
+  if (tx) exportSplintEntries(tx);
+});
+
+// Kursverlauf: tap a point/bar to inspect its exact value (touch-friendly alternative to hover tooltips)
+document.getElementById('sec-chart-card').addEventListener('click', (e) => {
+  const el = e.target.closest('.chart-point');
+  const readout = document.getElementById('sec-chart-readout');
+  if (!el || !readout) return;
+  const month = el.dataset.month;
+  const price = parseFloat(el.dataset.price);
+  const changeRaw = el.dataset.change;
+  const hasChange = changeRaw !== '' && changeRaw !== undefined;
+  const changeHtml = hasChange ? ` · Change: <span style="color:${signColor(parseFloat(changeRaw))}">${fmtPct(parseFloat(changeRaw),1)}</span>` : '';
+  readout.innerHTML = `<strong>${monthLabel(month)}</strong> · Value/Splint: ${fmtMoney(price)}${changeHtml}`;
+});
+
+document.getElementById('portfolio-search').addEventListener('input', renderPortfolio);
+document.querySelector('#portfolio-table tbody').addEventListener('change', async (e) => {
+  const input = e.target.closest('.eroi-input');
+  if (!input) return;
+  const assetId = input.dataset.assetId;
+  const m = DB.master[assetId];
+  if (!m) return;
+  const raw = input.value.trim();
+  m.eROI = raw === '' ? '' : parseFloat(raw);
+  // live-update the dependent "eROI vs IRR" cell in this row without re-rendering the whole table
+  const perf = computeSecurityPerformance(assetId);
+  const diff = computeEroiVsIrr(assetId, perf.irr);
+  const diffCell = document.querySelector(`#portfolio-table td[data-eroi-diff-for="${assetId}"]`);
+  if (diffCell){
+    diffCell.textContent = diff===null ? 'n/a' : fmtPct(diff,1);
+    diffCell.style.color = diff===null ? 'var(--ink-soft)' : signColor(diff);
+  }
+  await autoSyncToNeon('eROI edited');
+});
+document.querySelectorAll('#portfolio-table thead th[data-key]').forEach(th => {
+  th.addEventListener('click', () => {
+    if (portfolioSort.key === th.dataset.key) portfolioSort.dir *= -1;
+    else { portfolioSort.key = th.dataset.key; portfolioSort.dir = 1; }
+    renderPortfolio();
+  });
+});
+document.querySelectorAll('#portfolio-filter-nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#portfolio-filter-nav button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    portfolioFilter = btn.dataset.filter;
+    renderPortfolio();
+  });
+});
+document.getElementById('portfolio-category-filter').addEventListener('change', (e) => {
+  portfolioCategoryFilter = e.target.value;
+  renderPortfolio();
+});
+// Dashboard "By Category" rows are clickable: jump to Portfolio pre-filtered to that category.
+function goToPortfolioFilteredByCategory(category){
+  portfolioCategoryFilter = category;
+  document.querySelectorAll('#portfolio-filter-nav button').forEach(b=>b.classList.remove('active'));
+  document.querySelector('#portfolio-filter-nav button[data-filter="all"]').classList.add('active');
+  portfolioFilter = 'all';
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+  document.querySelector('nav.tabs button[data-view="portfolio"]').classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-portfolio').classList.add('active');
+  renderPortfolio();
+}
+document.querySelector('#category-table tbody').addEventListener('click', (e) => {
+  const row = e.target.closest('.cat-row');
+  if (!row) return;
+  goToPortfolioFilteredByCategory(row.dataset.category);
+});
+document.querySelectorAll('#tx-table thead th[data-key]').forEach(th => {
+  th.addEventListener('click', () => {
+    if (txSort.key === th.dataset.key) txSort.dir *= -1;
+    else { txSort.key = th.dataset.key; txSort.dir = 1; }
+    renderTransactions();
+  });
+});
+
+document.getElementById('sec-search').addEventListener('input', populateSecuritySelect);
+document.getElementById('sec-select').addEventListener('change', (e) => renderSecurityDetail(e.target.value));
+document.getElementById('sec-save-btn').addEventListener('click', async () => {
+  const id = document.getElementById('sec-select').value;
+  if (!id) return;
+  const m = ensureMaster(id, assetName(id));
+  const nameInput = document.getElementById('sec-name-input').value.trim();
+  m.assetName = nameInput || id; // fall back to the Asset ID internally if no name was set
+  m.category = document.getElementById('sec-category').value.trim();
+  m.subCategory = document.getElementById('sec-subcategory').value.trim();
+  m.categoryOld = document.getElementById('sec-category-old').value.trim();
+  m.notes = document.getElementById('sec-notes').value.trim();
+  document.getElementById('sec-save-status').textContent = 'Saved ✓';
+  populateSecuritySelect();
+  document.getElementById('sec-select').value = id;
+  renderSecurityDetail(id);
+  renderDashboard();
+  renderPortfolio();
+  renderTransactions();
+  renderPerformance();
+  await autoSyncToNeon('Master data updated');
+});
+document.getElementById('sec-eroi').addEventListener('change', async (e) => {
+  const id = document.getElementById('sec-select').value;
+  if (!id) return;
+  const m = ensureMaster(id, assetName(id));
+  const raw = e.target.value.trim();
+  m.eROI = raw === '' ? '' : parseFloat(raw);
+  const perf = computeSecurityPerformance(id);
+  const eroiDiff = computeEroiVsIrr(id, perf.irr);
+  const eroiDiffEl = document.getElementById('sec-eroi-diff');
+  eroiDiffEl.textContent = eroiDiff === null ? 'n/a' : fmtPct(eroiDiff,1);
+  eroiDiffEl.style.color = eroiDiff === null ? 'var(--ink-soft)' : signColor(eroiDiff);
+  await autoSyncToNeon('eROI edited');
+});
+
+document.getElementById('perf-search').addEventListener('input', renderPerformance);
+document.querySelector('#perf-table thead').addEventListener('click', (e) => {
+  const th = e.target.closest('th[data-key]');
+  if (!th) return;
+  if (perfSort.key === th.dataset.key) perfSort.dir *= -1;
+  else { perfSort.key = th.dataset.key; perfSort.dir = 1; }
+  renderPerformance();
+});
+document.querySelectorAll('#perf-mode-nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#perf-mode-nav button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    perfMode = btn.dataset.mode;
+    renderPerformance();
+  });
+});
+
+document.getElementById('prices-search').addEventListener('input', renderPrices);
+document.querySelectorAll('#prices-table thead th[data-key]').forEach(th => {
+  th.addEventListener('click', () => {
+    if (pricesSort.key === th.dataset.key) pricesSort.dir *= -1;
+    else { pricesSort.key = th.dataset.key; pricesSort.dir = 1; }
+    renderPrices();
+  });
+});
+document.querySelector('#prices-table tbody').addEventListener('change', async (e) => {
+  const input = e.target.closest('.price-edit-input');
+  if (!input) return;
+  const p = DB.prices.find(x => x.assetId === input.dataset.assetId && x.month === input.dataset.month);
+  if (!p) return;
+  const val = parseFloat(input.value);
+  if (isNaN(val)) return;
+  p.price = val;
+  await autoSyncToNeon('Price edited');
+  renderAll();
+});
+document.querySelector('#prices-table tbody').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.price-delete-btn');
+  if (!btn) return;
+  DB.prices = DB.prices.filter(x => !(x.assetId === btn.dataset.assetId && x.month === btn.dataset.month));
+  await autoSyncToNeon('Price deleted');
+  renderAll();
+});
+document.getElementById('price-add-btn').addEventListener('click', async () => {
+  const assetId = document.getElementById('price-add-asset').value;
+  const month = document.getElementById('price-add-month').value; // 'YYYY-MM'
+  const price = parseFloat(document.getElementById('price-add-value').value);
+  const currency = document.getElementById('price-add-currency').value.trim() || 'EUR';
+  if (!assetId || !month || isNaN(price)){ log('Please choose an asset, a month and a valid price.', true); return; }
+  upsertPrice(assetId, month, price, currency);
+  document.getElementById('price-add-value').value = '';
+  await autoSyncToNeon('Price added/updated');
+  renderAll();
+});
+
+function readFile(inputEl){
+  return new Promise((resolve, reject) => {
+    const file = inputEl.files[0];
+    if (!file){ reject(new Error('No file selected.')); return; }
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file, 'utf-8');
+  });
+}
+
+document.getElementById('load-opp').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  const btn = document.getElementById('upload-opp-btn');
+  const label = document.getElementById('load-opp-filename');
+  btn.disabled = !file;
+  label.textContent = file ? `Selected: ${file.name}` : '';
+});
+document.getElementById('upload-opp-btn').addEventListener('click', async () => {
+  const input = document.getElementById('load-opp');
+  const btn = document.getElementById('upload-opp-btn');
+  if (!input.files[0]) return;
+  btn.disabled = true;
+  try{
+    const asOf = document.getElementById('opp-date').value || todayISO();
+    importOpportunitiesCSV(await readFile(input), asOf);
+    renderAll();
+    await autoSyncToNeon('Investment Opportunities import');
+    document.getElementById('load-opp-filename').textContent = '';
+    input.value = '';
+  } catch(err){ log('Error loading the Opportunities export: '+err.message, true); btn.disabled = false; }
+});
+
+document.getElementById('load-act').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  const btn = document.getElementById('upload-act-btn');
+  const label = document.getElementById('load-act-filename');
+  btn.disabled = !file;
+  label.textContent = file ? `Selected: ${file.name}` : '';
+});
+document.getElementById('upload-act-btn').addEventListener('click', async () => {
+  const input = document.getElementById('load-act');
+  const btn = document.getElementById('upload-act-btn');
+  if (!input.files[0]) return;
+  btn.disabled = true;
+  try{
+    importTransactionsCSV(await readFile(input), 'Activities-Export');
+    renderAll();
+    await autoSyncToNeon('Activities import');
+    document.getElementById('load-act-filename').textContent = '';
+    input.value = '';
+  } catch(err){ log('Error loading the Activities export: '+err.message, true); btn.disabled = false; }
+});
+
+// ---------------------------------------------------------------- CSV BUILDERS (shared by download + GitHub save) --
+function buildPricesCSV(){
+  const rows = DB.prices.slice()
+    .sort((a,b)=> a.assetId===b.assetId ? (a.month<b.month?-1:1) : assetName(a.assetId).localeCompare(assetName(b.assetId)))
+    .map(p => ({AssetID:p.assetId, 'Asset Name': assetName(p.assetId), Month:p.month, Date:p.dateDMY, Price:p.price.toFixed(2), Currency:p.currency}));
+  return toCSV(['AssetID','Asset Name','Month','Date','Price','Currency'], rows);
+}
+function buildTransactionsCSV(){
+  const rows = DB.transactions.slice().sort((a,b)=> a.dateISO<b.dateISO?1:-1)
+    .map(t => ({
+      'Transaction ID': t.id, 'Transaction Type': t.type, 'Asset ID': t.assetId,
+      'Date Of Transaction': t.dateDMY, 'Money Amount': `${t.amount.toFixed(2)} ${t.currency}`,
+      'Purchase/Sale Price Per Splint': `${t.pricePerSplint.toFixed(2)} ${t.currency}`,
+      'Fees': `${t.fees.toFixed(2)} ${t.currency}`, 'Purchase/Sale Confirmation': t.confirmation,
+      'Day1Profit': t.day1Profit ?? '',
+      'FX Rate': t.fxRate ?? '',
+    }));
+  return toCSV(['Transaction ID','Transaction Type','Asset ID','Date Of Transaction','Money Amount','Purchase/Sale Price Per Splint','Fees','Purchase/Sale Confirmation','Day1Profit','FX Rate'], rows);
+}
+function buildMasterCSV(){
+  const rows = Object.values(DB.master).sort((a,b)=>a.assetName.localeCompare(b.assetName))
+    .map(m => ({AssetID:m.assetId, 'Asset Name':m.assetName, 'Asset Category':m.category, 'Asset SubCategory':m.subCategory, 'Asset Category_old':m.categoryOld||'', Notes:m.notes, 'Release Date':m.releaseDate||'', 'Min Horizon':m.minHorizon||'', 'Max Horizon':m.maxHorizon||'', 'eROI':m.eROI||''}));
+  return toCSV(['AssetID','Asset Name','Asset Category','Asset SubCategory','Asset Category_old','Notes','Release Date','Min Horizon','Max Horizon','eROI'], rows);
+}
+
+// ---------------------------------------------------------------- NEON DATA API --
+function neonStatus(msg, isErr){
+  const el = document.getElementById('neon-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = isErr ? 'var(--red)' : 'var(--ink-soft)';
+}
+function nowStamp(){
+  return new Intl.DateTimeFormat('de-CH', {
+    timeZone:'Europe/Zurich', day:'2-digit', month:'2-digit', year:'numeric',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false,
+  }).format(new Date());
+}
+
+// Maps a Neon splint_masterdata row (snake_case) into the DB.master shape (camelCase) used
+// throughout the app.
+function masterRowToDB(r){
+  return {
+    assetId: r.asset_id, assetName: r.asset_name || r.asset_id,
+    category: r.asset_category || '', subCategory: r.asset_subcategory || '',
+    categoryOld: r.asset_category_old || '', notes: r.notes || '',
+    releaseDate: r.release_date || '', minHorizon: r.min_horizon ?? '',
+    maxHorizon: r.max_horizon ?? '', eROI: r.eroi ?? '',
+  };
+}
+function priceRowToDB(r){
+  return {
+    assetId: r.asset_id, month: r.month,
+    dateDMY: r.price_date ? isoToDMY(r.price_date) : '',
+    price: parseFloat(r.price) || 0, currency: r.currency || 'EUR',
+  };
+}
+function txRowToDB(r){
+  return {
+    id: String(r.transaction_id), type: r.transaction_type, assetId: r.asset_id,
+    dateDMY: r.transaction_date ? isoToDMY(r.transaction_date) : '',
+    dateISO: r.transaction_date || '',
+    amount: parseFloat(r.money_amount) || 0, currency: r.money_currency || 'EUR',
+    pricePerSplint: parseFloat(r.price_per_splint) || 0, fees: parseFloat(r.fees) || 0,
+    confirmation: r.confirmation_doc || '',
+    splints: r.price_per_splint ? Math.round((r.money_amount / r.price_per_splint) * 100) / 100 : 1,
+    day1Profit: (r.day1_profit !== null && r.day1_profit !== undefined) ? r.day1_profit : '',
+    fxRate: (r.fx_rate !== null && r.fx_rate !== undefined) ? r.fx_rate : '',
+  };
+}
+
+async function loadFromNeon(){
+  neonStatus('Loading from Neon …');
+  try{
+    const [masterData, pricesData, txData] = await Promise.all([
+      neonSelect('splint_masterdata'),
+      neonSelect('splint_prices'),
+      neonSelect('splint_transactions'),
+    ]);
+
+    DB.master = {};
+    (masterData || []).forEach(r => { const m = masterRowToDB(r); DB.master[m.assetId] = m; });
+    DB.prices = (pricesData || []).map(priceRowToDB);
+    DB.transactions = (txData || []).map(txRowToDB);
+
+    neonStatus('Up to date ✓ (' + nowStamp() + ')');
+    log(`Loaded from Neon: ${Object.keys(DB.master).length} assets, ${DB.prices.length} price points, ${DB.transactions.length} transactions.`);
+  } catch(err){
+    neonStatus('Error: ' + err.message, true);
+    log('Loading from Neon failed: ' + err.message, true);
+  }
+}
+
+// Upserts the current in-memory master-data dict into splint_masterdata.
+async function syncMasterToNeon(){
+  const rows = Object.values(DB.master).map(m => ({
+    asset_id: m.assetId, asset_name: m.assetName, asset_category: m.category || null,
+    asset_subcategory: m.subCategory || null, asset_category_old: m.categoryOld || null,
+    notes: m.notes || null, release_date: m.releaseDate || null,
+    min_horizon: m.minHorizon === '' ? null : m.minHorizon,
+    max_horizon: m.maxHorizon === '' ? null : m.maxHorizon,
+    eroi: m.eROI === '' ? null : m.eROI,
+  }));
+  if (!rows.length) return;
+  await neonUpsert('splint_masterdata', rows, 'asset_id');
+}
+
+// Upserts current in-memory prices, then deletes any Neon row (by asset_id+month) that no
+// longer exists locally — mirrors the old "full CSV overwrite" semantics for deletions.
+async function syncPricesToNeon(){
+  const rows = DB.prices.map(p => ({
+    asset_id: p.assetId, asset_name: assetName(p.assetId), month: p.month,
+    price_date: p.dateDMY ? dmyToISO(p.dateDMY) : null,
+    price: p.price, currency: p.currency || 'EUR',
+  }));
+  if (rows.length){
+    await neonUpsert('splint_prices', rows, 'asset_id,month');
+  }
+  const remote = await neonSelect('splint_prices', 'asset_id,month');
+  const localKeys = new Set(DB.prices.map(p => p.assetId + '|' + p.month));
+  const toDelete = (remote || []).filter(r => !localKeys.has(r.asset_id + '|' + r.month));
+  for (const r of toDelete){
+    await neonDelete('splint_prices', { asset_id: r.asset_id, month: r.month });
+  }
+}
+
+// Transactions are only ever appended/edited by transaction_id, never bulk-deleted locally, so a
+// plain upsert (no reconciliation delete) matches the app's existing dedup-by-ID behavior.
+async function syncTransactionsToNeon(){
+  const rows = DB.transactions.map(t => ({
+    transaction_id: parseInt(t.id, 10), transaction_type: t.type, asset_id: t.assetId,
+    transaction_date: t.dateISO || null,
+    money_amount: t.amount, money_currency: t.currency || 'EUR',
+    price_per_splint: t.pricePerSplint, price_currency: t.currency || 'EUR',
+    fees: t.fees, fees_currency: t.currency || 'EUR',
+    confirmation_doc: t.confirmation || null,
+    day1_profit: t.day1Profit === '' ? null : t.day1Profit,
+    fx_rate: t.fxRate === '' ? null : t.fxRate,
+  }));
+  if (!rows.length) return;
+  await neonUpsert('splint_transactions', rows, 'transaction_id');
+}
+
+async function autoSyncToNeon(reason){
+  neonStatus('Saving to Neon …');
+  try{
+    await syncMasterToNeon();
+    await syncPricesToNeon();
+    await syncTransactionsToNeon();
+    neonStatus('Saved ✓ (' + nowStamp() + ')');
+    log(`Synced to Neon (${reason}).`);
+  } catch(err){
+    neonStatus('Error: ' + err.message, true);
+    log('Neon sync failed: ' + err.message, true);
+  }
+}
+
+document.getElementById('neon-refresh').addEventListener('click', async () => {
+  await loadFromNeon();
+  renderAll();
+});
+document.getElementById('neon-export').addEventListener('click', () => {
+  downloadText('stammdaten.csv', buildMasterCSV());
+  downloadText('prices.csv', buildPricesCSV());
+  downloadText('transactions.csv', buildTransactionsCSV());
+  log('Exported current data as CSV (stammdaten.csv, prices.csv, transactions.csv).');
+});
+
+// default opp-date to today
+document.getElementById('opp-date').value = todayISO();
+loadFxRates();
+
+</script>
+</body>
+</html>
