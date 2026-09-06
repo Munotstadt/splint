@@ -1825,7 +1825,7 @@ function renderDashboard(){
     </tr>
   `).join('') || `<tr><td colspan="5" class="hint">No transactions yet.</td></tr>`;
 
-  renderCashFlow(months, valuePoints, costPoints);
+  renderCashFlow(monthlySeries.map(r => r.month), valuePoints, costPoints);
 }
 
 function renderCashFlow(months, valuePoints, costPoints){
